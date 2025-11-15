@@ -1632,12 +1632,17 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
                   console.log(`✅ Removed from ${removeFrom} collection`);
                 }
 
-                // Add to correct collection
+                // Add to correct collection (but only if not already there!)
                 const addTo = detectedType === "flower" ? "flowers" : "plants";
-                freshDb[addTo].push(target);
+                const alreadyExists = freshDb[addTo].some((p) => p.id === target.id);
+                if (!alreadyExists) {
+                  freshDb[addTo].push(target);
+                  console.log(`✅ Successfully moved to ${addTo} collection`);
+                } else {
+                  console.log(`⚠️  Item already exists in ${addTo}, skipping duplicate add`);
+                }
 
                 subjectCollection = addTo;
-                console.log(`✅ Successfully moved to ${addTo} collection`);
 
                 // Save DB immediately and notify client right away (don't wait for other processing)
                 writeDB(freshDb);
