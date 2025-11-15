@@ -251,22 +251,26 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DB_FILE))
   fs.writeFileSync(DB_FILE, JSON.stringify({ plants: [] }, null, 2));
 
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(UPLOAD_DIR));
-app.use(express.json());
-
 // Enable CORS for cross-origin requests (Firebase to Render)
+// MUST be before static routes so it applies to /uploads
 app.use((req, res, next) => {
   const origin = req.headers.origin || "*";
   res.header("Access-Control-Allow-Origin", origin);
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-invite-token");
   res.header("Access-Control-Allow-Credentials", "true");
+  // Allow images to be loaded cross-origin with proper headers
+  res.header("Cross-Origin-Resource-Policy", "cross-origin");
+  res.header("Cross-Origin-Opener-Policy", "unsafe-none");
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
   next();
 });
+
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(UPLOAD_DIR));
+app.use(express.json());
 
 // Enhanced system prompt: encourage varied, natural responses with personality
 // NOTE: do NOT invent nicknames; only use the recorded nickname if present. Avoid repetitive opening lines like "Hi there".
