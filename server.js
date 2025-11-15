@@ -17,25 +17,34 @@ const serviceAccount = {
   type: "service_account",
   project_id: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
   private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY 
-    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+  private_key: process.env.FIREBASE_PRIVATE_KEY
+    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
     : undefined,
   client_email: process.env.FIREBASE_CLIENT_EMAIL,
   client_id: process.env.FIREBASE_CLIENT_ID,
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
   token_uri: "https://oauth2.googleapis.com/token",
-  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs"
+  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
 };
 
 // Only initialize if we have the required credentials
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}-default-rtdb.firebaseio.com`
+    databaseURL: `https://${
+      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+    }-default-rtdb.firebaseio.com`,
   });
-  console.log("✅ Firebase Admin SDK initialized with URL:", `https://${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}-default-rtdb.firebaseio.com`);
+  console.log(
+    "✅ Firebase Admin SDK initialized with URL:",
+    `https://${
+      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+    }-default-rtdb.firebaseio.com`
+  );
 } else {
-  console.warn("⚠️  Firebase credentials not found. Using fallback local storage.");
+  console.warn(
+    "⚠️  Firebase credentials not found. Using fallback local storage."
+  );
 }
 
 // Reference to Firebase Realtime Database
@@ -45,7 +54,11 @@ const db = admin.database();
 let bucket = null;
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   try {
-    bucket = admin.storage().bucket(`${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.appspot.com`);
+    bucket = admin
+      .storage()
+      .bucket(
+        `${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.appspot.com`
+      );
     console.log("✅ Firebase Storage bucket initialized");
   } catch (e) {
     console.error("⚠️  Firebase Storage initialization failed:", e.message);
@@ -60,19 +73,21 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
     return null;
   }
   try {
-    console.log(`📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`);
-    
+    console.log(
+      `📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`
+    );
+
     await bucket.upload(localFilePath, {
       destination: destinationPath,
       metadata: {
-        cacheControl: 'public, max-age=31536000',
-        contentType: 'image/jpeg'
+        cacheControl: "public, max-age=31536000",
+        contentType: "image/jpeg",
       },
-      public: true
+      public: true,
     });
-    
+
     console.log("✅ File uploaded to Firebase Storage");
-    
+
     // Make file public
     const file = bucket.file(destinationPath);
     try {
@@ -81,7 +96,7 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
     } catch (e) {
       console.warn("⚠️  Could not make file public:", e.message);
     }
-    
+
     // Return public URL
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
     console.log("✅ Firebase Storage URL generated:", publicUrl);
@@ -205,28 +220,29 @@ async function syncDBToFirebase(dbData) {
     // Clear both collections first to prevent duplicates
     await db.ref("plants").set({});
     await db.ref("flowers").set({});
-    
+
     // Now write the correct data
     if (dbData.plants && dbData.plants.length > 0) {
       const plantsObj = {};
-      dbData.plants.forEach(p => {
+      dbData.plants.forEach((p) => {
         plantsObj[p.id] = p;
       });
       await db.ref("plants").set(plantsObj);
     }
     if (dbData.flowers && dbData.flowers.length > 0) {
       const flowersObj = {};
-      dbData.flowers.forEach(f => {
+      dbData.flowers.forEach((f) => {
         flowersObj[f.id] = f;
       });
       await db.ref("flowers").set(flowersObj);
     }
   } catch (e) {
-    console.warn("⚠️  Background Firebase sync failed (non-blocking):", e.message);
+    console.warn(
+      "⚠️  Background Firebase sync failed (non-blocking):",
+      e.message
+    );
   }
 }
-
-
 
 // Define directories BEFORE error handlers that use them
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -314,7 +330,10 @@ app.use((req, res, next) => {
   const origin = req.headers.origin || "*";
   res.header("Access-Control-Allow-Origin", origin);
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-invite-token");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-invite-token"
+  );
   res.header("Access-Control-Allow-Credentials", "true");
   // Allow images to be loaded cross-origin with proper headers
   res.header("Cross-Origin-Resource-Policy", "cross-origin");
@@ -381,7 +400,7 @@ function readDB() {
 function writeDB(obj) {
   fs.writeFileSync(DB_FILE, JSON.stringify(obj, null, 2));
   // Trigger background Firebase sync (non-blocking)
-  syncDBToFirebase(obj).catch(e => {
+  syncDBToFirebase(obj).catch((e) => {
     console.warn("Firebase sync error:", e.message);
   });
 }
@@ -1494,26 +1513,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     plant.conversations.push(msgEntry);
     writeDB(db);
 
-    // Upload to Firebase Storage FIRST before responding
-    // This ensures the Firebase URL is available in the response
-    let firebaseUrl = null;
-    try {
-      const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
-      firebaseUrl = await uploadFileToFirebaseStorage(file.path, firebaseUploadPath);
-      if (firebaseUrl) {
-        imgEntry.firebaseUrl = firebaseUrl;
-        console.log("✅ Firebase Storage URL obtained:", firebaseUrl);
-        // Update the image entry in the database with the Firebase URL
-        const dbKey = subjectCollection === "flowers" ? "flowers" : "plants";
-        const plantRef = admin.database().ref(`${dbKey}/${plant.id}`);
-        await plantRef.update({ images: plant.images });
-      }
-    } catch (e) {
-      console.error("Firebase upload error (continuing with local URL):", e.message);
-      firebaseUrl = null;
-    }
-
-    // respond to the client with the Firebase URL if available
+    // respond quickly to the client before doing Firebase upload
+    // Firebase upload will happen in background
     try {
       const subjectTypeResp =
         subjectCollection === "flowers" ? "flower" : "plant";
@@ -1531,8 +1532,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         message: msgEntry.text,
         careHint: null,
         identification: plant.identification || null,
-        imageUrl: firebaseUrl || `/uploads/${imgEntry.filename}`,
-        firebaseImageUrl: firebaseUrl,
+        imageUrl: `/uploads/${imgEntry.filename}`,
+        firebaseImageUrl: null, // Will be populated in background
         imageFilename: imgEntry.filename,
         imageId: imgEntry.id,
         growthDelta: null,
@@ -1549,14 +1550,30 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         message: msgEntry.text,
         imageFilename: imgEntry.filename,
         imageId: imgEntry.id,
-        firebaseImageUrl: firebaseUrl,
       });
     }
 
     // Background processing: analyze image, detect species, compute similarity/growth and update DB and conversations (including LLM enrichment)
     (async () => {
       try {
-
+        // Upload to Firebase Storage in background
+        const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
+        const firebaseUrl = await uploadFileToFirebaseStorage(file.path, firebaseUploadPath);
+        if (firebaseUrl) {
+          imgEntry.firebaseUrl = firebaseUrl;
+          console.log("✅ Firebase Storage URL obtained:", firebaseUrl);
+          // Update the database with the Firebase URL
+          const dbKey = subjectCollection === "flowers" ? "flowers" : "plants";
+          const freshDb = readDB();
+          const plantRef = freshDb[dbKey].find((p) => p.id === plant.id);
+          if (plantRef) {
+            const imgRef = plantRef.images.find((i) => i.id === imgEntry.id);
+            if (imgRef) {
+              imgRef.firebaseUrl = firebaseUrl;
+              writeDB(freshDb);
+            }
+          }
+        }
         // image analysis
         let area = 0;
         try {
@@ -1639,12 +1656,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
                 // Add to correct collection (but only if not already there!)
                 const addTo = detectedType === "flower" ? "flowers" : "plants";
-                const alreadyExists = freshDb[addTo].some((p) => p.id === target.id);
+                const alreadyExists = freshDb[addTo].some(
+                  (p) => p.id === target.id
+                );
                 if (!alreadyExists) {
                   freshDb[addTo].push(target);
                   console.log(`✅ Successfully moved to ${addTo} collection`);
                 } else {
-                  console.log(`⚠️  Item already exists in ${addTo}, skipping duplicate add`);
+                  console.log(
+                    `⚠️  Item already exists in ${addTo}, skipping duplicate add`
+                  );
                 }
 
                 subjectCollection = addTo;
@@ -3062,10 +3083,10 @@ app.post("/tts/eleven", requireToken, express.json(), async (req, res) => {
 app.post("/admin/reset", (req, res) => {
   try {
     const emptyDb = { plants: [], flowers: [] };
-    
+
     // Clear in-memory and file
     writeDB(emptyDb);
-    
+
     // Also clear Firebase
     (async () => {
       try {
@@ -3076,11 +3097,13 @@ app.post("/admin/reset", (req, res) => {
         console.error("Firebase reset error:", e.message);
       }
     })();
-    
-    res.json({ success: true, message: "Database reset - ready for fresh uploads" });
+
+    res.json({
+      success: true,
+      message: "Database reset - ready for fresh uploads",
+    });
   } catch (e) {
     console.error("Reset error:", e);
     res.status(500).json({ error: e.message });
   }
 });
-
