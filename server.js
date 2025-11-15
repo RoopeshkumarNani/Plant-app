@@ -54,30 +54,43 @@ const db = admin.database();
 let bucket = null;
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   try {
-    bucket = admin
-      .storage()
-      .bucket(
-        `${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.appspot.com`
-      );
+    const bucketName = `${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.appspot.com`;
+    console.log(`🔧 Attempting to initialize Firebase Storage bucket: ${bucketName}`);
+    bucket = admin.storage().bucket(bucketName);
     console.log("✅ Firebase Storage bucket initialized");
+    console.log("📍 Bucket name:", bucket.name);
   } catch (e) {
     console.error("⚠️  Firebase Storage initialization failed:", e.message);
+    console.error("Stack:", e.stack);
     bucket = null;
   }
+} else {
+  console.warn("⚠️  Firebase credentials incomplete - Storage uploads disabled");
+  if (!process.env.FIREBASE_PRIVATE_KEY) console.warn("  - FIREBASE_PRIVATE_KEY not set");
+  if (!process.env.FIREBASE_CLIENT_EMAIL) console.warn("  - FIREBASE_CLIENT_EMAIL not set");
 }
 
 // Function to upload file to Firebase Storage
 async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
   if (!bucket) {
-    console.error("Firebase Storage not available - bucket is null");
+    console.error("❌ Firebase Storage not available - bucket is null");
+    console.error("   This means Firebase credentials were not properly initialized");
     return null;
   }
   try {
     console.log(
       `📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`
     );
+    
+    // Verify file exists
+    if (!fs.existsSync(localFilePath)) {
+      console.error(`❌ Local file does not exist: ${localFilePath}`);
+      return null;
+    }
+    console.log(`✅ Local file exists, size: ${fs.statSync(localFilePath).size} bytes`);
 
-    await bucket.upload(localFilePath, {
+    // Upload with explicit error handling
+    const uploadResponse = await bucket.upload(localFilePath, {
       destination: destinationPath,
       metadata: {
         cacheControl: "public, max-age=31536000",
@@ -85,8 +98,7 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
       },
       public: true,
     });
-
-    console.log("✅ File uploaded to Firebase Storage");
+    console.log("✅ File uploaded to Firebase Storage successfully");
 
     // Make file public
     const file = bucket.file(destinationPath);
@@ -95,6 +107,7 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
       console.log("✅ File made public in Firebase Storage");
     } catch (e) {
       console.warn("⚠️  Could not make file public:", e.message);
+      // Continue anyway - file might still be accessible
     }
 
     // Return public URL
@@ -102,8 +115,11 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
     console.log("✅ Firebase Storage URL generated:", publicUrl);
     return publicUrl;
   } catch (e) {
-    console.error("❌ Error uploading to Firebase Storage:", e.message);
-    console.error("Stack:", e.stack);
+    console.error("❌ Error uploading to Firebase Storage:");
+    console.error("   Message:", e.message);
+    console.error("   Code:", e.code);
+    console.error("   Full error:", JSON.stringify(e, null, 2));
+    console.error("   Stack:", e.stack);
     return null;
   }
 }
@@ -1556,12 +1572,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // Background processing: analyze image, detect species, compute similarity/growth and update DB and conversations (including LLM enrichment)
     (async () => {
       try {
+        console.log("🔄 Background processing started for image:", imgEntry.id);
+        
         // Upload to Firebase Storage in background
+        console.log("📤 Background: Attempting Firebase Storage upload...");
         const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
         const firebaseUrl = await uploadFileToFirebaseStorage(file.path, firebaseUploadPath);
         if (firebaseUrl) {
+          console.log("✅ Background: Firebase URL obtained:", firebaseUrl);
           imgEntry.firebaseUrl = firebaseUrl;
-          console.log("✅ Firebase Storage URL obtained:", firebaseUrl);
+          console.log("✅ Background: Setting firebaseUrl in memory:", firebaseUrl);
           // Update the database with the Firebase URL
           const dbKey = subjectCollection === "flowers" ? "flowers" : "plants";
           const freshDb = readDB();
@@ -1570,9 +1590,17 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
             const imgRef = plantRef.images.find((i) => i.id === imgEntry.id);
             if (imgRef) {
               imgRef.firebaseUrl = firebaseUrl;
+              console.log("✅ Background: Writing firebaseUrl to database");
               writeDB(freshDb);
+              console.log("✅ Background: Database updated with firebaseUrl");
+            } else {
+              console.warn("❌ Background: Could not find image in plant:", imgEntry.id);
             }
+          } else {
+            console.warn("❌ Background: Could not find plant in DB:", plant.id);
           }
+        } else {
+          console.warn("⚠️  Background: Firebase upload returned null - image will not have firebaseUrl");
         }
         // image analysis
         let area = 0;
