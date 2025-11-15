@@ -2998,12 +2998,11 @@
         // Helper function to build image URLs with API_BASE_URL
         function getImageUrl(filename) {
             if (!filename) return '';
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
-              ? API_BASE_URL + '/uploads/' 
-              : '/uploads/';
-            const fullUrl = baseUrl + filename;
-            console.log('🖼️ getImageUrl:', { filename, API_BASE_URL, baseUrl, fullUrl });
-            return fullUrl;
+            // Always use API_BASE_URL if available, otherwise fall back to /uploads/
+            if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
+                return API_BASE_URL + '/uploads/' + filename;
+            }
+            return '/uploads/' + filename;
         }
 
         // Basic tab wiring
