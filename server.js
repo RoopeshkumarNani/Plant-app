@@ -65,10 +65,20 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
       metadata: {
         cacheControl: 'public, max-age=31536000',
         contentType: 'image/jpeg'
-      }
+      },
+      public: true
     });
-    // Make file public and get the public URL
+    
+    // Make file public
     const file = bucket.file(destinationPath);
+    try {
+      await file.makePublic();
+      console.log("✅ File made public in Firebase Storage");
+    } catch (e) {
+      console.warn("⚠️  Could not make file public:", e.message);
+    }
+    
+    // Return public URL
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
     console.log("✅ Image uploaded to Firebase Storage:", publicUrl);
     return publicUrl;
@@ -1474,7 +1484,26 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     plant.conversations.push(msgEntry);
     writeDB(db);
 
-    // respond quickly to the client before doing heavy work
+    // Upload to Firebase Storage FIRST before responding
+    // This ensures the Firebase URL is available in the response
+    let firebaseUrl = null;
+    try {
+      const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
+      firebaseUrl = await uploadFileToFirebaseStorage(file.path, firebaseUploadPath);
+      if (firebaseUrl) {
+        imgEntry.firebaseUrl = firebaseUrl;
+        console.log("✅ Firebase Storage URL obtained:", firebaseUrl);
+        // Update the image entry in the database with the Firebase URL
+        const dbKey = subjectCollection === "flowers" ? "flowers" : "plants";
+        const plantRef = admin.database().ref(`${dbKey}/${plant.id}`);
+        await plantRef.update({ images: plant.images });
+      }
+    } catch (e) {
+      console.error("Firebase upload error (continuing with local URL):", e.message);
+      firebaseUrl = null;
+    }
+
+    // respond to the client with the Firebase URL if available
     try {
       const subjectTypeResp =
         subjectCollection === "flowers" ? "flower" : "plant";
@@ -1492,8 +1521,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         message: msgEntry.text,
         careHint: null,
         identification: plant.identification || null,
-        imageUrl: `/uploads/${imgEntry.filename}`,
-        firebaseImageUrl: null, // Will be updated in background
+        imageUrl: firebaseUrl || `/uploads/${imgEntry.filename}`,
+        firebaseImageUrl: firebaseUrl,
         imageFilename: imgEntry.filename,
         imageId: imgEntry.id,
         growthDelta: null,
@@ -1510,19 +1539,13 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         message: msgEntry.text,
         imageFilename: imgEntry.filename,
         imageId: imgEntry.id,
+        firebaseImageUrl: firebaseUrl,
       });
     }
 
     // Background processing: analyze image, detect species, compute similarity/growth and update DB and conversations (including LLM enrichment)
     (async () => {
       try {
-        // Upload to Firebase Storage in background
-        const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
-        const firebaseUrl = await uploadFileToFirebaseStorage(file.path, firebaseUploadPath);
-        if (firebaseUrl) {
-          imgEntry.firebaseUrl = firebaseUrl;
-          console.log("✅ Firebase Storage URL assigned:", firebaseUrl);
-        }
 
         // image analysis
         let area = 0;
