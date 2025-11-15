@@ -31,9 +31,9 @@ const serviceAccount = {
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.firebaseio.com`
+    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}-default-rtdb.firebaseio.com`
   });
-  console.log("✅ Firebase Admin SDK initialized");
+  console.log("✅ Firebase Admin SDK initialized with URL:", `https://${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}-default-rtdb.firebaseio.com`);
 } else {
   console.warn("⚠️  Firebase credentials not found. Using fallback local storage.");
 }
