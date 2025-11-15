@@ -14,6 +14,7 @@
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="/config.js"></script>
     <style>
         :root {
             --bg: #f4fbf6;
@@ -3201,11 +3202,11 @@
         async function fetchWithFallback(url, options = {}) {
             const maxRetries = 3;
             let lastError = null;
-            
+
             // Prepend API_BASE_URL if url is relative
-            const fullUrl = typeof API_BASE_URL !== 'undefined' && url.startsWith('/') 
-              ? API_BASE_URL + url 
-              : url;
+            const fullUrl = typeof API_BASE_URL !== 'undefined' && url.startsWith('/')
+                ? API_BASE_URL + url
+                : url;
 
             // Try fetch first (with retries)
             for (let i = 0; i < maxRetries; i++) {
