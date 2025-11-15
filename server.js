@@ -1433,12 +1433,14 @@ function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
 
 app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
   try {
+    console.log("🚀 Upload endpoint called");
     const file = req.file;
     if (!file)
       return res.status(400).json({
         success: false,
         error: 'No file uploaded (field name must be "photo")',
       });
+    console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
     const { species, nickname, plantId, subjectType, subjectId, owner } =
       req.body;
     const db = readDB();
@@ -1927,13 +1929,13 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         }
       } catch (outerErr) {
         console.error(
-          "Upload background worker error",
+          "❌ Upload background worker error:",
           outerErr && (outerErr.stack || outerErr.message || outerErr)
         );
       }
     })();
   } catch (e) {
-    console.error(e);
+    console.error("❌ Upload endpoint error:", e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
