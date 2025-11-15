@@ -95,6 +95,17 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(UPLOAD_DIR));
 app.use(express.json());
 
+// Enable CORS for cross-origin requests (Firebase to Render)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Enhanced system prompt: encourage varied, natural responses with personality
 // NOTE: do NOT invent nicknames; only use the recorded nickname if present. Avoid repetitive opening lines like "Hi there".
 const SYSTEM_PROMPTS = {
@@ -2701,7 +2712,7 @@ app.post("/flowers", requireToken, express.json(), (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () =>
+app.listen(PORT, "0.0.0.0", () =>
   console.log(`Server started on port ${PORT}`)
 );
 
