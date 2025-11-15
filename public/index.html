@@ -3108,7 +3108,10 @@
         // Subscribe to server-sent events for enrichment notifications
         try {
             if (typeof EventSource !== 'undefined') {
-                const es = new EventSource('/events');
+                const eventsUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
+                  ? API_BASE_URL + '/events' 
+                  : '/events';
+                const es = new EventSource(eventsUrl);
                 es.addEventListener('open', () => console.log('SSE connected'));
                 es.addEventListener('error', (e) => { /* ignore, connection may auto-retry */ });
                 es.addEventListener('enriched', (ev) => {
