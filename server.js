@@ -2876,6 +2876,23 @@ app.get("/plants", async (req, res) => {
   }
 });
 
+// Diagnostic endpoint to check Firebase configuration
+app.get("/admin/firebase-status", (req, res) => {
+  const status = {
+    firebaseInitialized: !!admin.apps.length,
+    bucketInitialized: !!bucket,
+    bucketName: bucket ? bucket.name : null,
+    credentials: {
+      projectId: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
+      hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+      hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+      hasPrivateKeyId: !!process.env.FIREBASE_PRIVATE_KEY_ID,
+    },
+    status: bucket ? "✅ Ready" : "❌ Not initialized",
+  };
+  res.json(status);
+});
+
 app.get("/plants/:id", async (req, res) => {
   try {
     const plant = await getPlantById(req.params.id);
