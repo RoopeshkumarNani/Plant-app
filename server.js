@@ -56,10 +56,12 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
 // Function to upload file to Firebase Storage
 async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
   if (!bucket) {
-    console.error("Firebase Storage not available");
+    console.error("Firebase Storage not available - bucket is null");
     return null;
   }
   try {
+    console.log(`📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`);
+    
     await bucket.upload(localFilePath, {
       destination: destinationPath,
       metadata: {
@@ -68,6 +70,8 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
       },
       public: true
     });
+    
+    console.log("✅ File uploaded to Firebase Storage");
     
     // Make file public
     const file = bucket.file(destinationPath);
@@ -80,10 +84,11 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
     
     // Return public URL
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
-    console.log("✅ Image uploaded to Firebase Storage:", publicUrl);
+    console.log("✅ Firebase Storage URL generated:", publicUrl);
     return publicUrl;
   } catch (e) {
-    console.error("Error uploading to Firebase Storage:", e.message);
+    console.error("❌ Error uploading to Firebase Storage:", e.message);
+    console.error("Stack:", e.stack);
     return null;
   }
 }
