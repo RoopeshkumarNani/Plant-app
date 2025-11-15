@@ -1465,6 +1465,18 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         error: 'No file uploaded (field name must be "photo")',
       });
     console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
+    
+    // Read file into buffer immediately to ensure it's available for background processing
+    // This prevents issues if the file gets deleted from ephemeral storage later
+    let fileBuffer = null;
+    try {
+      fileBuffer = fs.readFileSync(file.path);
+      console.log("✅ File read into memory buffer, size:", fileBuffer.length);
+    } catch (e) {
+      console.warn("⚠️  Could not read file into buffer:", e.message);
+      // Continue anyway - we can still try to use the file path
+    }
+    
     const { species, nickname, plantId, subjectType, subjectId, owner } =
       req.body;
     const db = readDB();
@@ -1603,7 +1615,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         // Upload to Firebase Storage in background
         console.log("📤 Background: Attempting Firebase Storage upload...");
         const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
-        const firebaseUrl = await uploadFileToFirebaseStorage(file.path, firebaseUploadPath);
+        // Use buffer if available (preferred), otherwise fall back to file path
+        const uploadSource = fileBuffer || file.path;
+        const uploadSourceType = fileBuffer ? "buffer" : "file.path";
+        console.log(`   Upload source: ${uploadSourceType} (${fileBuffer ? fileBuffer.length : "N/A"} bytes)`);
+        const firebaseUrl = await uploadFileToFirebaseStorage(uploadSource, firebaseUploadPath);
         if (firebaseUrl) {
           console.log("✅ Background: Firebase URL obtained:", firebaseUrl);
           imgEntry.firebaseUrl = firebaseUrl;
