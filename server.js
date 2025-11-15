@@ -71,26 +71,50 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
 }
 
 // Function to upload file to Firebase Storage
-async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
+// Can accept either a file path string OR file data (path will be read into buffer)
+async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
   if (!bucket) {
     console.error("❌ Firebase Storage not available - bucket is null");
     console.error("   This means Firebase credentials were not properly initialized");
     return null;
   }
   try {
-    console.log(
-      `📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`
-    );
+    let fileBuffer;
+    let fileSourceDesc = "";
     
-    // Verify file exists
-    if (!fs.existsSync(localFilePath)) {
-      console.error(`❌ Local file does not exist: ${localFilePath}`);
+    // Handle both file paths and buffers
+    if (typeof filePathOrBuffer === "string") {
+      const localFilePath = filePathOrBuffer;
+      console.log(`📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`);
+      
+      // Verify file exists
+      if (!fs.existsSync(localFilePath)) {
+        console.error(`❌ Local file does not exist: ${localFilePath}`);
+        console.error(`   Current working directory: ${process.cwd()}`);
+        console.error(`   UPLOAD_DIR: ${UPLOAD_DIR}`);
+        try {
+          console.error(`   Contents of ${UPLOAD_DIR}:`, fs.readdirSync(UPLOAD_DIR).slice(0, 5));
+        } catch (e) {
+          console.error(`   Could not list ${UPLOAD_DIR}:`, e.message);
+        }
+        return null;
+      }
+      const stats = fs.statSync(localFilePath);
+      console.log(`✅ Local file exists, size: ${stats.size} bytes`);
+      fileBuffer = fs.readFileSync(localFilePath);
+      fileSourceDesc = `file:${localFilePath}`;
+    } else if (Buffer.isBuffer(filePathOrBuffer)) {
+      fileBuffer = filePathOrBuffer;
+      fileSourceDesc = "buffer";
+      console.log(`📤 Starting Firebase upload from buffer (size: ${fileBuffer.length} bytes) → ${destinationPath}`);
+    } else {
+      console.error(`❌ Invalid file input: expected string or Buffer, got ${typeof filePathOrBuffer}`);
       return null;
     }
-    console.log(`✅ Local file exists, size: ${fs.statSync(localFilePath).size} bytes`);
 
     // Upload with explicit error handling
-    const uploadResponse = await bucket.upload(localFilePath, {
+    console.log(`   Uploading ${fileSourceDesc} to Firebase...`);
+    const uploadResponse = await bucket.upload(fileBuffer, {
       destination: destinationPath,
       metadata: {
         cacheControl: "public, max-age=31536000",
@@ -100,11 +124,11 @@ async function uploadFileToFirebaseStorage(localFilePath, destinationPath) {
     });
     console.log("✅ File uploaded to Firebase Storage successfully");
 
-    // Make file public
+    // Make file public (should be public already due to public: true above, but ensure it)
     const file = bucket.file(destinationPath);
     try {
       await file.makePublic();
-      console.log("✅ File made public in Firebase Storage");
+      console.log("✅ File confirmed public in Firebase Storage");
     } catch (e) {
       console.warn("⚠️  Could not make file public:", e.message);
       // Continue anyway - file might still be accessible
