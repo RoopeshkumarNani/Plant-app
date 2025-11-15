@@ -2819,7 +2819,7 @@
                     // ...existing code...
                     const img = document.createElement('img');
                     const last = p.images[p.images.length - 1];
-                    img.src = last ? getImageUrl(last.filename) + '?t=' + Date.now() : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
+                    img.src = last ? getImageUrl(last) + '?t=' + Date.now() : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
                     card.appendChild(img);
                     const name = document.createElement('div'); name.className = 'plant-name'; name.textContent = p.nickname || p.species || 'Unknown';
                     card.appendChild(name);
@@ -2923,7 +2923,7 @@
                     // (no visual 'Flower' badge — rendering is kept minimal)
                     const img = document.createElement('img');
                     const last = p.images && p.images.length ? p.images[p.images.length - 1] : null;
-                    img.src = last ? getImageUrl(last.filename) + '?t=' + Date.now() : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23fff0f6"/></svg>';
+                    img.src = last ? getImageUrl(last) + '?t=' + Date.now() : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23fff0f6"/></svg>';
                     card.appendChild(img);
                     const name = document.createElement('div'); name.className = 'plant-name'; name.textContent = p.nickname || p.species || 'Unknown';
                     card.appendChild(name);
@@ -2968,14 +2968,14 @@
                 const last = subj.images && subj.images.length ? subj.images[subj.images.length - 1] : null;
                 if (existing) {
                     const img = existing.querySelector('img');
-                    if (img && last) img.src = getImageUrl(last.filename) + '?t=' + Date.now();
+                    if (img && last) img.src = getImageUrl(last) + '?t=' + Date.now();
                     const name = existing.querySelector('.plant-name'); if (name) name.textContent = subj.nickname || subj.species || 'Unknown';
                     const meta = existing.querySelector('.small'); if (meta) meta.textContent = (subj.images && subj.images.length) ? (subj.images.length + ' photos') : '';
                     return;
                 }
                 // create new card element (similar to loader)
                 const card = document.createElement('div'); card.className = 'plant-card'; card.style.position = 'relative'; card.dataset.id = subj.id;
-                const img = document.createElement('img'); img.src = last ? getImageUrl(last.filename) + '?t=' + Date.now() : '';
+                const img = document.createElement('img'); img.src = last ? getImageUrl(last) + '?t=' + Date.now() : '';
                 // clicking the image should open chat focused on that image (but don't auto-open)
                 img.style.cursor = 'pointer';
                 img.addEventListener('click', (ev) => { ev.stopPropagation(); openChat(subj.id, last ? last.id : null, subjectType === 'flower' ? 'flower' : undefined); });
@@ -2995,10 +2995,20 @@
             } catch (e) { console.warn('insertOrUpdateCard failed', e); }
         }
 
-        // Helper function to build image URLs with API_BASE_URL
-        function getImageUrl(filename) {
+        // Helper function to build image URLs with API_BASE_URL or Firebase Storage
+        function getImageUrl(imageOrFilename) {
+            if (!imageOrFilename) return '';
+            
+            // If it's an object with firebaseUrl, use that first (persistent storage)
+            if (typeof imageOrFilename === 'object' && imageOrFilename.firebaseUrl) {
+                return imageOrFilename.firebaseUrl;
+            }
+            
+            // Otherwise extract filename
+            let filename = typeof imageOrFilename === 'string' ? imageOrFilename : imageOrFilename.filename;
             if (!filename) return '';
-            // Always use API_BASE_URL if available, otherwise fall back to /uploads/
+            
+            // Use API_BASE_URL if available, otherwise fall back to /uploads/
             if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
                 return API_BASE_URL + '/uploads/' + filename;
             }
@@ -3348,7 +3358,7 @@
                     p.images.forEach(img => {
                         const el = document.createElement('div'); el.className = 'msg';
                         // Render image without exposed uploadedAt metadata (keeps data in DB but not shown)
-                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${getImageUrl(img.filename)}?t=${Date.now()}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo'></div>`;
+                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${getImageUrl(img)}?t=${Date.now()}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo'></div>`;
                         msgs.appendChild(el);
                         try {
                             const imgEl = el.querySelector('img[data-imgid]');
@@ -3377,13 +3387,12 @@
                 // show full conversation history (latest at bottom)
                 (p.conversations || []).forEach(m => {
                     const isUser = m.role === 'user';
-                    // try to map imageId to filename
-                    let imgFn = null;
+                    // try to map imageId to image object (for Firebase URL support)
+                    let imgObj = null;
                     if (m.imageId && p.images && p.images.length) {
-                        const found = p.images.find(i => i.id === m.imageId);
-                        if (found) imgFn = found.filename;
+                        imgObj = p.images.find(i => i.id === m.imageId);
                     }
-                    appendMessageEl(m.role === 'user' ? 'user' : 'plant', m.text, m.time, imgFn, m.imageId || null, m.growthDelta || null, m.text_en, m.text_kn);
+                    appendMessageEl(m.role === 'user' ? 'user' : 'plant', m.text, m.time, imgObj, m.imageId || null, m.growthDelta || null, m.text_en, m.text_kn);
                 });
 
                 // hide history panel initially
@@ -3416,7 +3425,7 @@
                         const row = document.createElement('div'); row.className = 'manage-row';
                         row.innerHTML = `
                                             <div style='display:flex; gap:8px; align-items:center; flex:0 0 auto'>
-                                                <img src='${getImageUrl(img.filename)}' style='width:64px; height:48px; object-fit:cover; border-radius:6px' data-fn='${img.filename}'>
+                                                <img src='${getImageUrl(img)}' style='width:64px; height:48px; object-fit:cover; border-radius:6px' data-fn='${img.filename}'>
                                             </div>
                                             <!-- uploadedAt hidden from UI by default; data still available on server -->
                                             <div style='flex:0 0 auto'><button class='ghost small delete-small' data-img='${img.id}' data-fn='${img.filename}'>Delete</button></div>
@@ -3493,14 +3502,14 @@
             }
         }
 
-        function appendMessageEl(role, text, time, imageFilename, imageId, growthDelta, text_en, text_kn) {
+        function appendMessageEl(role, text, time, imageObjOrFilename, imageId, growthDelta, text_en, text_kn) {
             const msgs = document.getElementById('messages');
             if (!msgs) return;
             // remove empty placeholder
             const empty = msgs.querySelector('.empty'); if (empty) empty.remove();
             const el = document.createElement('div'); el.className = 'msg' + (role === 'user' ? ' user' : '');
             let html = '';
-            if (imageFilename) html += `<div style='margin-bottom:8px'><img data-fn='${imageFilename}' src='${getImageUrl(imageFilename)}' style='max-width:220px; border-radius:8px'></div>`;
+            if (imageObjOrFilename) html += `<div style='margin-bottom:8px'><img data-fn='${typeof imageObjOrFilename === 'string' ? imageObjOrFilename : imageObjOrFilename.filename}' src='${getImageUrl(imageObjOrFilename)}' style='max-width:220px; border-radius:8px'></div>`;
             // Store growth data for internal use but don't display any technical info
             html += `<div>${text}${imageId ? ' 📷' : ''}</div>`;
             el.innerHTML = html;
@@ -4372,7 +4381,7 @@
                 p.images.forEach(img => {
                     const row = document.createElement('div');
                     row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.alignItems = 'center'; row.style.marginBottom = '8px';
-                    row.innerHTML = `<div style='display:flex; gap:8px; align-items:center'><img src='${getImageUrl(img.filename)}' style='width:72px; height:52px; object-fit:cover; border-radius:6px' data-fn='${img.filename}'><div class='small'>${new Date(img.uploadedAt).toLocaleString()}</div></div><div><button class='ghost small' data-plant='${p.id}' data-img='${img.id}' data-fn='${img.filename}'>Delete</button></div>`;
+                    row.innerHTML = `<div style='display:flex; gap:8px; align-items:center'><img src='${getImageUrl(img)}' style='width:72px; height:52px; object-fit:cover; border-radius:6px' data-fn='${img.filename}'><div class='small'>${new Date(img.uploadedAt).toLocaleString()}</div></div><div><button class='ghost small' data-plant='${p.id}' data-img='${img.id}' data-fn='${img.filename}'>Delete</button></div>`;
                     c.appendChild(row);
                     const del = row.querySelector('button[data-img]');
                     del.addEventListener('click', async () => {
@@ -4607,7 +4616,7 @@
             } else {
                 plant.images.forEach(img => {
                     const it = document.createElement('div'); it.className = 'item';
-                    const im = document.createElement('img'); im.src = getImageUrl(img.filename); im.alt = img.filename; im.style.cursor = 'pointer';
+                    const im = document.createElement('img'); im.src = getImageUrl(img); im.alt = img.filename; im.style.cursor = 'pointer';
                     const del = document.createElement('button'); del.className = 'delete-btn'; del.innerHTML = '🗑'; del.title = 'Delete'; del.setAttribute('aria-label', 'Delete photo');
                     it.appendChild(im); it.appendChild(del); content.appendChild(it);
                     // click thumbnail to open chat and focus this image
@@ -4795,12 +4804,8 @@
             const img1 = images[idx1];
             const img2 = images[idx2];
             
-            // Build image URLs with API_BASE_URL if available
-            const imgBaseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
-              ? API_BASE_URL + '/uploads/' 
-              : '/uploads/';
-            const img1Url = imgBaseUrl + img1.filename;
-            const img2Url = imgBaseUrl + img2.filename;
+            const img1Url = getImageUrl(img1);
+            const img2Url = getImageUrl(img2);
 
             let modal = document.getElementById("compareModal");
             if (!modal) {

@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "plants": {
+      ".read": true,
+      ".write": true
+    },
+    "flowers": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
