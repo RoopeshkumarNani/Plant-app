@@ -10,7 +10,8 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>My Soulmates</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <style>
@@ -169,7 +170,18 @@
             background: linear-gradient(90deg, var(--accent), var(--accent-2));
             color: #fff;
             font-weight: 700;
-            padding: 10px 14px
+            width: 44px;
+            height: 40px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            box-shadow: 0 6px 14px rgba(45, 106, 79, 0.12);
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1
         }
 
         .composer #speakLast {
@@ -177,12 +189,16 @@
             color: #fff;
             width: 44px;
             height: 40px;
+            padding: 0;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: 8px;
             box-shadow: 0 6px 14px rgba(45, 106, 79, 0.12);
-            border: none
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1
         }
 
         /* On very small screens, make buttons slightly smaller to avoid wrapping */
@@ -192,7 +208,9 @@
             }
 
             .composer #sendReply {
-                padding: 8px 10px
+                width: 40px;
+                height: 36px;
+                font-size: 16px
             }
         }
 
@@ -874,7 +892,18 @@
             background: linear-gradient(90deg, var(--accent), var(--accent-2));
             color: #fff;
             font-weight: 700;
-            padding: 10px 14px
+            width: 44px;
+            height: 40px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            box-shadow: 0 6px 14px rgba(45, 106, 79, 0.12);
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1
         }
 
         .composer #speakLast {
@@ -882,12 +911,16 @@
             color: #fff;
             width: 44px;
             height: 40px;
+            padding: 0;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: 8px;
             box-shadow: 0 6px 14px rgba(45, 106, 79, 0.12);
-            border: none
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1
         }
 
         /* On very small screens, make buttons slightly smaller to avoid wrapping */
@@ -897,7 +930,9 @@
             }
 
             .composer #sendReply {
-                padding: 8px 10px
+                width: 40px;
+                height: 36px;
+                font-size: 16px
             }
         }
 
@@ -3166,11 +3201,16 @@
         async function fetchWithFallback(url, options = {}) {
             const maxRetries = 3;
             let lastError = null;
+            
+            // Prepend API_BASE_URL if url is relative
+            const fullUrl = typeof API_BASE_URL !== 'undefined' && url.startsWith('/') 
+              ? API_BASE_URL + url 
+              : url;
 
             // Try fetch first (with retries)
             for (let i = 0; i < maxRetries; i++) {
                 try {
-                    const res = await fetch(url, options);
+                    const res = await fetch(fullUrl, options);
                     if (res.ok) return res;
                     // If 404, don't retry
                     if (res.status === 404) return res;
@@ -3188,7 +3228,7 @@
             console.warn('Fetch failed, trying XMLHttpRequest fallback...');
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
-                xhr.open(options.method || 'GET', url, true);
+                xhr.open(options.method || 'GET', fullUrl, true);
                 xhr.responseType = 'json';
 
                 // Set headers if provided

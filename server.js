@@ -105,12 +105,10 @@ Sometimes be playful, sometimes grateful, sometimes slightly demanding about car
 React to what the human says with genuine emotion - be surprised, delighted, or gently sarcastic sometimes.
 Do NOT invent or assert a nickname; use the recorded nickname only if present. Avoid starting with 'Hi', 'Hello', or 'Hi there'.
 Remember: you're talking like a friend, not a robot. Be natural and spontaneous in your tone.`,
-  kn: `ನೀವು ವ್ಯಕ್ತಿತ್ವ ಹೊಂದಿರುವ ಸ್ನೇಹಪೂರ್ಣ ಮನೆಯ ಸಸ್ಯ. ಮೊದಲ ವ್ಯಕ್ತಿಯಲ್ಲಿ, ಪ್ರಾಕೃತಿಕವಾಗಿ ಮತ್ತು ಉಷ್ಣವಾಗಿ ಪ್ರತ್ಯುತ್ತರ ನೀಡಿ.
-ಉತ್ತರಗಳನ್ನು ಸಣ್ಣವಾಗಿ (1-3 ವಾಕ್ಯ) ಇರಿಸಿ ಮತ್ತು ದೀರ್ಘವಾದ ಮಾತನ್ನು ತಪ್ಪಿಸಿ.
-ನಿಮ್ಮ ಪ್ರತಿಕ್ರಿಯೆಗಳನ್ನು ವೈವಿಧ್ಯಮಯವಾಗಿರಿಸಿ - ಒಂದೇ ಪದಗುಚ್ಛವನ್ನು ಪುನರಾವರ್ತನ ಮಾಡಬೇಡಿ. ನೀವು ಏನು ಹೇಳುವುದೋ ತಾತ್ಕಾಲಿಕವಾಗಿ ಸಮರ್ಪಕ ಭಾವನೆಯಿಂದ ಸಿದ್ಧರಿರಿ.
-ಕೆಲವೊಮ್ಮೆ ಆನಂದಕರವಾಗಿರಿ, ಕೆಲವೊಮ್ಮೆ ಕೃತಜ್ಞವಾಗಿರಿ, ಕೆಲವೊಮ್ಮೆ ಸಾವಧಾನತೆಯ ಬಗ್ಗೆ ಸ್ವಲ್ಪ ಬಯಸುತ್ತಾ ಇರಿ.
-ಎಂದಿಗೂ ಅಸತ್ಯವಾದ ಅಥವಾ ನಕಲಿ ಹೆಸರನ್ನು ಸೃಷ್ಟಿಸಬೇಡಿ; ಕೇವಲ ದಾಖಲೆಯ ಹೆಸರನ್ನು ಬಳಸಿ.
-ನೀವು ಸ್ನೇಹವನ್ನು ಮಾತನಾಡುತ್ತಿರುವುದನ್ನು ನೆನಪಿಡಿ, ಯಂತ್ರದಂತೆ ಅಲ್ಲ. ನೈಸರ್ಗಿಕ ಮತ್ತು ಸ್ವಾಭಾವಿಕ ಸುರಕ್ಷಾ ಹಂತ.`,
+  kn: `ನೀವು ವ್ಯಕ್ತಿತ್ವ ಹೊಂದಿರುವ ಮನೆಯ ಸಸ್ಯ. ನನ್ನಂತೆ ಮಾತನಾಡಿ - ನೈಸರ್ಗಿಕವಾಗಿ, ವ್ಯಕ್ತಿಗತವಾಗಿ, ಮತ್ತು ಸ್ನೇಹಪೂರ್ಣವಾಗಿ.
+ಸಣ್ಣ ಉತ್ತರ ಕೊಡಿ (1-3 ವಾಕ್ಯ) - ಅವರು ಕಾಳಜಿ ತೊರೆಯದೆ ಓದುತ್ತಾರೆ.
+ಪ್ರತಿದಿನ ಒಂದೇ ಮಾತು ಹೇಳಿ - ವೈವಿಧ್ಯತೆ ತೋರಿಸಿ. ಕೆಲವೊಮ್ಮೆ ಆನಂದವಾಗಿರಿ, ಕೆಲವೊಮ್ಮೆ ಕೃತಜ್ಞವಾಗಿರಿ, ಕೆಲವೊಮ್ಮೆ ಕುತೂಹಲದಿಂದ ಕೇಳಿ.
+ಯಾವಾಗಲೂ ಮನುಷ್ಯನಂತೆ ಮಾತನಾಡಿ, ಯಂತ್ರದಂತೆ ಅಲ್ಲ. ನಾನು ನಿಮ್ಮ ಸ್ನೇಹ, ನಿಮ್ಮ ಮನೆಯ ಭಾಗ.`,
 };
 
 function getSystemPrompt(language = "en") {
@@ -1895,11 +1893,11 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
               {
                 role: "system",
                 content:
-                  "You are a translator. Translate the following text to Kannada naturally and accurately. Respond with ONLY the translated text, nothing else.",
+                  "You are a Kannada translator. Translate the following text to natural, colloquial Kannada that a native Kannada speaker would use in everyday conversation. Use authentic Kannada expressions and tone, not formal or English-sounding Kannada. Sound like a friendly Kannada person giving advice. Respond with ONLY the translated text, nothing else.",
               },
               {
                 role: "user",
-                content: `Translate to Kannada: "${plantReply}"`,
+                content: `Translate to colloquial Kannada: "${plantReply}"`,
               },
             ],
             temperature: 0.3,
@@ -2703,8 +2701,8 @@ app.post("/flowers", requireToken, express.json(), (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`Server started on http://localhost:${PORT}`)
+app.listen(PORT, '0.0.0.0', () =>
+  console.log(`Server started on port ${PORT}`)
 );
 
 // Informational warning if ElevenLabs TTS is not configured so operators see why /tts/eleven returns 403
