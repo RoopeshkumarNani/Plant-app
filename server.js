@@ -2885,11 +2885,6 @@ app.post("/flowers", requireToken, express.json(), async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-  } catch (e) {
-    console.error("POST /flowers error", e);
-    res.status(500).json({ error: "failed to create flower" });
-  }
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () =>
