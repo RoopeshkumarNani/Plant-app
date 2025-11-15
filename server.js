@@ -1611,6 +1611,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     (async () => {
       try {
         console.log("🔄 Background processing started for image:", imgEntry.id);
+        console.log("   Firebase bucket status - initialized?", !!bucket, "bucket.name:", bucket?.name || "N/A");
         
         // Upload to Firebase Storage in background
         console.log("📤 Background: Attempting Firebase Storage upload...");
@@ -1643,6 +1644,20 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           }
         } else {
           console.warn("⚠️  Background: Firebase upload returned null - image will not have firebaseUrl");
+          console.warn("   Checking if this is a permission issue or other error...");
+          // Log bucket details for debugging
+          if (bucket) {
+            console.warn("   Bucket exists:", bucket.name);
+            try {
+              // Try to list files to verify bucket access
+              const [files] = await bucket.getFiles({ maxResults: 1 });
+              console.warn("   Bucket access test passed - can list files");
+            } catch (e) {
+              console.warn("   Bucket access FAILED:", e.message);
+            }
+          } else {
+            console.warn("   Bucket is NULL!");
+          }
         }
         // image analysis
         let area = 0;
