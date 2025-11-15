@@ -144,6 +144,32 @@ async function deleteFlowerImage(flowerId, imageId) {
   }
 }
 
+// Sync function: Write local data to Firebase in background
+async function syncDBToFirebase(dbData) {
+  if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
+    return; // Firebase not configured, skip
+  }
+  try {
+    if (dbData.plants && dbData.plants.length > 0) {
+      const plantsObj = {};
+      dbData.plants.forEach(p => {
+        plantsObj[p.id] = p;
+      });
+      await db.ref("plants").set(plantsObj);
+    }
+    if (dbData.flowers && dbData.flowers.length > 0) {
+      const flowersObj = {};
+      dbData.flowers.forEach(f => {
+        flowersObj[f.id] = f;
+      });
+      await db.ref("flowers").set(flowersObj);
+    }
+  } catch (e) {
+    console.warn("⚠️  Background Firebase sync failed (non-blocking):", e.message);
+  }
+}
+
+
 
 // Define directories BEFORE error handlers that use them
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -293,6 +319,10 @@ function readDB() {
 }
 function writeDB(obj) {
   fs.writeFileSync(DB_FILE, JSON.stringify(obj, null, 2));
+  // Trigger background Firebase sync (non-blocking)
+  syncDBToFirebase(obj).catch(e => {
+    console.warn("Firebase sync error:", e.message);
+  });
 }
 
 // Simple Server-Sent Events (SSE) manager for notifying clients when background
