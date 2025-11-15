@@ -202,6 +202,11 @@ async function syncDBToFirebase(dbData) {
     return; // Firebase not configured, skip
   }
   try {
+    // Clear both collections first to prevent duplicates
+    await db.ref("plants").set({});
+    await db.ref("flowers").set({});
+    
+    // Now write the correct data
     if (dbData.plants && dbData.plants.length > 0) {
       const plantsObj = {};
       dbData.plants.forEach(p => {
