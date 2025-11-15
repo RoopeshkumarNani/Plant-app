@@ -3001,6 +3001,7 @@
             
             // If it's an object with firebaseUrl, use that first (persistent storage)
             if (typeof imageOrFilename === 'object' && imageOrFilename.firebaseUrl) {
+                console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
                 return imageOrFilename.firebaseUrl;
             }
             
@@ -3010,9 +3011,13 @@
             
             // Use API_BASE_URL if available, otherwise fall back to /uploads/
             if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
-                return API_BASE_URL + '/uploads/' + filename;
+                const url = API_BASE_URL + '/uploads/' + filename;
+                console.log('📸 Image URL (API_BASE):', url);
+                return url;
             }
-            return '/uploads/' + filename;
+            const url = '/uploads/' + filename;
+            console.log('📸 Image URL (fallback):', url);
+            return url;
         }
 
         // Basic tab wiring
