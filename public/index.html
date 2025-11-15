@@ -3850,7 +3850,10 @@
             async function doUploadWithProgress(formData, headers = {}) {
                 return new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
-                    xhr.open('POST', '/upload');
+                    const uploadUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
+                      ? API_BASE_URL + '/upload' 
+                      : '/upload';
+                    xhr.open('POST', uploadUrl);
                     Object.keys(headers || {}).forEach(k => xhr.setRequestHeader(k, headers[k]));
                     xhr.upload.onprogress = function (e) {
                         if (!e.lengthComputable) return;
