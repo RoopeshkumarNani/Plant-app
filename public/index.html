@@ -3001,7 +3001,9 @@
             const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
               ? API_BASE_URL + '/uploads/' 
               : '/uploads/';
-            return baseUrl + filename;
+            const fullUrl = baseUrl + filename;
+            console.log('🖼️ getImageUrl:', { filename, API_BASE_URL, baseUrl, fullUrl });
+            return fullUrl;
         }
 
         // Basic tab wiring
