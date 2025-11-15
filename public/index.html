@@ -2998,17 +2998,17 @@
         // Helper function to build image URLs with API_BASE_URL or Firebase Storage
         function getImageUrl(imageOrFilename) {
             if (!imageOrFilename) return '';
-            
+
             // If it's an object with firebaseUrl, use that first (persistent storage)
             if (typeof imageOrFilename === 'object' && imageOrFilename.firebaseUrl) {
                 console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
                 return imageOrFilename.firebaseUrl;
             }
-            
+
             // Otherwise extract filename  
             let filename = typeof imageOrFilename === 'string' ? imageOrFilename : imageOrFilename.filename;
             if (!filename) return '';
-            
+
             // Use API_BASE_URL if available, otherwise fall back to /uploads/
             if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
                 const url = API_BASE_URL + '/uploads/' + filename;
@@ -3133,9 +3133,9 @@
         // Subscribe to server-sent events for enrichment notifications
         try {
             if (typeof EventSource !== 'undefined') {
-                const eventsUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
-                  ? API_BASE_URL + '/events' 
-                  : '/events';
+                const eventsUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL)
+                    ? API_BASE_URL + '/events'
+                    : '/events';
                 const es = new EventSource(eventsUrl);
                 es.addEventListener('open', () => console.log('SSE connected'));
                 es.addEventListener('error', (e) => { /* ignore, connection may auto-retry */ });
@@ -3179,38 +3179,41 @@
                         const tabFlowers = document.getElementById('tab-flowers');
                         const tabPlants = document.getElementById('tab-plants');
 
-                        if (newType === 'flower') {
-                            activeTab = 'flowers';
-                            console.log('🌸 Switching to Flowers tab and reloading...');
-                            if (tabFlowers) {
-                                tabFlowers.classList.add('active');
-                                console.log('Added active class to flowers tab');
+                        // Small delay to ensure backend has finished writing
+                        setTimeout(() => {
+                            if (newType === 'flower') {
+                                activeTab = 'flowers';
+                                console.log('🌸 Switching to Flowers tab and reloading...');
+                                if (tabFlowers) {
+                                    tabFlowers.classList.add('active');
+                                    console.log('Added active class to flowers tab');
+                                }
+                                if (tabPlants) {
+                                    tabPlants.classList.remove('active');
+                                    console.log('Removed active class from plants tab');
+                                }
+                                loadFlowers();
+                            } else {
+                                activeTab = 'plants';
+                                console.log('🌱 Switching to Plants tab and reloading...');
+                                if (tabPlants) {
+                                    tabPlants.classList.add('active');
+                                    console.log('Added active class to plants tab');
+                                }
+                                if (tabFlowers) {
+                                    tabFlowers.classList.remove('active');
+                                    console.log('Removed active class from flowers tab');
+                                }
+                                loadPlants();
                             }
-                            if (tabPlants) {
-                                tabPlants.classList.remove('active');
-                                console.log('Removed active class from plants tab');
-                            }
-                            loadFlowers();
-                        } else {
-                            activeTab = 'plants';
-                            console.log('🌱 Switching to Plants tab and reloading...');
-                            if (tabPlants) {
-                                tabPlants.classList.add('active');
-                                console.log('Added active class to plants tab');
-                            }
-                            if (tabFlowers) {
-                                tabFlowers.classList.remove('active');
-                                console.log('Removed active class from flowers tab');
-                            }
-                            loadPlants();
-                        }
 
-                        // If this item was selected, clear the chat
-                        if (currentPlant && currentPlant.id === sid) {
-                            currentPlant = null;
-                            const msgs = document.getElementById('messages');
-                            if (msgs) msgs.innerHTML = '<div class="empty">🌱</div>';
-                        }
+                            // If this item was selected, clear the chat
+                            if (currentPlant && currentPlant.id === sid) {
+                                currentPlant = null;
+                                const msgs = document.getElementById('messages');
+                                if (msgs) msgs.innerHTML = '<div class="empty">🌱</div>';
+                            }
+                        }, 500);  // 500ms delay to ensure backend data is ready
                     } catch (e) { console.warn('Failed to handle categorized event', e); }
                 });
             }
@@ -3877,9 +3880,9 @@
             async function doUploadWithProgress(formData, headers = {}) {
                 return new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
-                    const uploadUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
-                      ? API_BASE_URL + '/upload' 
-                      : '/upload';
+                    const uploadUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL)
+                        ? API_BASE_URL + '/upload'
+                        : '/upload';
                     xhr.open('POST', uploadUrl);
                     Object.keys(headers || {}).forEach(k => xhr.setRequestHeader(k, headers[k]));
                     xhr.upload.onprogress = function (e) {
@@ -3995,12 +3998,12 @@
 
                     // Now check which gallery contains the uploaded item and switch to that tab
                     if (subjId) {
-                        const plantsUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
-                          ? API_BASE_URL + '/plants' 
-                          : '/plants';
-                        const flowersUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) 
-                          ? API_BASE_URL + '/flowers' 
-                          : '/flowers';
+                        const plantsUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL)
+                            ? API_BASE_URL + '/plants'
+                            : '/plants';
+                        const flowersUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL)
+                            ? API_BASE_URL + '/flowers'
+                            : '/flowers';
                         const db = await (await fetch(plantsUrl)).json();
                         const isPlant = db.some(p => p.id === subjId);
                         const isFi = await (await fetch(flowersUrl)).json();
@@ -4808,7 +4811,7 @@
 
             const img1 = images[idx1];
             const img2 = images[idx2];
-            
+
             const img1Url = getImageUrl(img1);
             const img2Url = getImageUrl(img2);
 
