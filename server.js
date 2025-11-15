@@ -3047,3 +3047,30 @@ app.post("/tts/eleven", requireToken, express.json(), async (req, res) => {
     return res.status(500).json({ error: err.message || String(err) });
   }
 });
+
+// Reset endpoint for testing - clears all plants and flowers
+app.post("/admin/reset", (req, res) => {
+  try {
+    const db = readDB();
+    db.plants = [];
+    db.flowers = [];
+    writeDB(db);
+    
+    // Also clear Firebase
+    (async () => {
+      try {
+        await admin.database().ref("plants").set([]);
+        await admin.database().ref("flowers").set([]);
+        console.log("✅ Firebase reset complete");
+      } catch (e) {
+        console.error("Firebase reset error:", e.message);
+      }
+    })();
+    
+    res.json({ success: true, message: "Database reset - ready for fresh uploads" });
+  } catch (e) {
+    console.error("Reset error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
