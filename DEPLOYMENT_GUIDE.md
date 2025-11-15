@@ -1,6 +1,7 @@
 # Firebase + Cloud Run Deployment Guide
 
 ## Prerequisites
+
 1. Google Cloud SDK installed: https://cloud.google.com/sdk/docs/install
 2. Firebase CLI installed: ✅ (already done)
 3. Docker installed: https://www.docker.com/products/docker-desktop
@@ -59,6 +60,7 @@ After Cloud Run deployment, update `public/index.html`:
 Find the API base URL (currently likely `http://localhost:3000`) and replace with your Cloud Run URL.
 
 Search for any hardcoded API calls and update them:
+
 - Replace `http://localhost:3000` with your Cloud Run service URL
 - Example: `https://plant-app-backend-xxxxxx.run.app`
 
@@ -73,6 +75,7 @@ This will deploy your `public/` folder to Firebase Hosting.
 ## Step 8: Verify Deployment
 
 After deployment:
+
 1. Visit your Firebase Hosting URL (provided by firebase deploy)
 2. Test all features:
    - Upload plants/flowers
@@ -84,17 +87,21 @@ After deployment:
 ## Troubleshooting
 
 ### Voice/Audio Not Working
+
 Check browser console (F12 → Console tab) for errors. Common issues:
+
 - CORS errors: May need to enable CORS in server.js
 - Missing TTS service: Verify OpenAI key is valid
 - Browser restrictions: Some browsers restrict audio on non-HTTPS (but Firebase Hosting uses HTTPS)
 
 ### API Calls Failing
+
 - Verify Cloud Run URL is correct in your frontend
 - Check Cloud Run logs: `gcloud run logs read plant-app-backend --limit 50`
 - Ensure environment variables are set in Cloud Run
 
 ### Database Issues
+
 - Your `data/db.json` is copied into the container
 - For persistent data, consider migrating to Firebase Firestore (optional)
 - For now, uploads will persist within the container lifetime
@@ -102,6 +109,7 @@ Check browser console (F12 → Console tab) for errors. Common issues:
 ## Optional: Set Up Automatic Deployment
 
 After initial setup, you can configure GitHub integration:
+
 ```bash
 firebase init hosting:github
 ```

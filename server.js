@@ -10,6 +10,140 @@ const sharp = require("sharp");
 const fetch = require("node-fetch");
 const FormData = require("form-data");
 const { v4: uuidv4 } = require("uuid");
+const admin = require("firebase-admin");
+
+// Initialize Firebase Admin SDK
+const serviceAccount = {
+  type: "service_account",
+  project_id: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
+  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+  private_key: process.env.FIREBASE_PRIVATE_KEY 
+    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : undefined,
+  client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  client_id: process.env.FIREBASE_CLIENT_ID,
+  auth_uri: "https://accounts.google.com/o/oauth2/auth",
+  token_uri: "https://oauth2.googleapis.com/token",
+  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs"
+};
+
+// Only initialize if we have the required credentials
+if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.firebaseio.com`
+  });
+  console.log("✅ Firebase Admin SDK initialized");
+} else {
+  console.warn("⚠️  Firebase credentials not found. Using fallback local storage.");
+}
+
+// Reference to Firebase Realtime Database
+const db = admin.database();
+
+// Firebase Database Helper Functions
+async function getPlants() {
+  try {
+    const snapshot = await db.ref("plants").once("value");
+    return snapshot.val() || [];
+  } catch (e) {
+    console.error("Error reading plants from Firebase:", e.message);
+    return [];
+  }
+}
+
+async function getFlowers() {
+  try {
+    const snapshot = await db.ref("flowers").once("value");
+    return snapshot.val() || [];
+  } catch (e) {
+    console.error("Error reading flowers from Firebase:", e.message);
+    return [];
+  }
+}
+
+async function addPlant(plant) {
+  try {
+    const plantRef = db.ref("plants").push();
+    plant.id = plantRef.key;
+    plant.id_backup = plantRef.key;
+    await plantRef.set(plant);
+    return plant;
+  } catch (e) {
+    console.error("Error adding plant to Firebase:", e.message);
+    throw e;
+  }
+}
+
+async function addFlower(flower) {
+  try {
+    const flowerRef = db.ref("flowers").push();
+    flower.id = flowerRef.key;
+    flower.id_backup = flowerRef.key;
+    await flowerRef.set(flower);
+    return flower;
+  } catch (e) {
+    console.error("Error adding flower to Firebase:", e.message);
+    throw e;
+  }
+}
+
+async function updatePlant(id, updates) {
+  try {
+    await db.ref(`plants/${id}`).update(updates);
+  } catch (e) {
+    console.error("Error updating plant in Firebase:", e.message);
+    throw e;
+  }
+}
+
+async function updateFlower(id, updates) {
+  try {
+    await db.ref(`flowers/${id}`).update(updates);
+  } catch (e) {
+    console.error("Error updating flower in Firebase:", e.message);
+    throw e;
+  }
+}
+
+async function getPlantById(id) {
+  try {
+    const snapshot = await db.ref(`plants/${id}`).once("value");
+    return snapshot.val();
+  } catch (e) {
+    console.error("Error reading plant from Firebase:", e.message);
+    return null;
+  }
+}
+
+async function getFlowerById(id) {
+  try {
+    const snapshot = await db.ref(`flowers/${id}`).once("value");
+    return snapshot.val();
+  } catch (e) {
+    console.error("Error reading flower from Firebase:", e.message);
+    return null;
+  }
+}
+
+async function deletePlantImage(plantId, imageId) {
+  try {
+    await db.ref(`plants/${plantId}/images/${imageId}`).remove();
+  } catch (e) {
+    console.error("Error deleting plant image from Firebase:", e.message);
+    throw e;
+  }
+}
+
+async function deleteFlowerImage(flowerId, imageId) {
+  try {
+    await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
+  } catch (e) {
+    console.error("Error deleting flower image from Firebase:", e.message);
+    throw e;
+  }
+}
+
 
 // Define directories BEFORE error handlers that use them
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -2565,16 +2699,23 @@ app.post(
   }
 );
 
-app.get("/plants", (req, res) => {
-  const db = readDB();
-  res.json(db.plants);
+app.get("/plants", async (req, res) => {
+  try {
+    const plants = await getPlants();
+    res.json(Array.isArray(plants) ? plants : Object.values(plants || {}));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.get("/plants/:id", (req, res) => {
-  const db = readDB();
-  const plant = db.plants.find((p) => p.id === req.params.id);
-  if (!plant) return res.status(404).json({ error: "Not found" });
-  res.json(plant);
+app.get("/plants/:id", async (req, res) => {
+  try {
+    const plant = await getPlantById(req.params.id);
+    if (!plant) return res.status(404).json({ error: "Not found" });
+    res.json(plant);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Get care schedule for a plant (watering frequency inference)
@@ -2679,34 +2820,41 @@ app.post(
 );
 
 // Return a single flower by id (parity with plants)
-app.get("/flowers/:id", (req, res) => {
-  const db = readDB();
-  const flower = (db.flowers || []).find((p) => p.id === req.params.id);
-  if (!flower) return res.status(404).json({ error: "Not found" });
-  res.json(flower);
+app.get("/flowers/:id", async (req, res) => {
+  try {
+    const flower = await getFlowerById(req.params.id);
+    if (!flower) return res.status(404).json({ error: "Not found" });
+    res.json(flower);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Flowers endpoints (lightweight parity with plants)
-app.get("/flowers", (req, res) => {
-  const db = readDB();
-  res.json(db.flowers || []);
+app.get("/flowers", async (req, res) => {
+  try {
+    const flowers = await getFlowers();
+    res.json(Array.isArray(flowers) ? flowers : Object.values(flowers || {}));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.post("/flowers", requireToken, express.json(), (req, res) => {
+app.post("/flowers", requireToken, express.json(), async (req, res) => {
   try {
-    const db = readDB();
-    db.flowers = db.flowers || [];
     const { species = "Unknown", nickname = "", images = [] } = req.body || {};
     const newFlower = {
-      id: uuidv4(),
       species,
       nickname,
       images,
       conversations: [],
     };
-    db.flowers.push(newFlower);
-    writeDB(db);
-    res.json({ success: true, flower: newFlower });
+    const flower = await addFlower(newFlower);
+    res.json({ success: true, flower });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
   } catch (e) {
     console.error("POST /flowers error", e);
     res.status(500).json({ error: "failed to create flower" });
