@@ -2893,6 +2893,43 @@ app.get("/admin/firebase-status", (req, res) => {
   res.json(status);
 });
 
+// Test Firebase Storage upload
+app.get("/admin/test-firebase-upload", async (req, res) => {
+  try {
+    // Create a simple test file
+    const testFilePath = path.join(__dirname, "test-file.txt");
+    fs.writeFileSync(testFilePath, "Test content for Firebase Storage");
+    
+    console.log("🧪 Testing Firebase Storage upload with test file");
+    const firebaseUrl = await uploadFileToFirebaseStorage(
+      testFilePath,
+      "test/test-file.txt"
+    );
+    
+    // Clean up
+    fs.unlinkSync(testFilePath);
+    
+    if (firebaseUrl) {
+      res.json({
+        success: true,
+        message: "Firebase Storage upload successful",
+        url: firebaseUrl,
+      });
+    } else {
+      res.json({
+        success: false,
+        message: "Firebase Storage upload failed - check logs",
+      });
+    }
+  } catch (e) {
+    console.error("Test endpoint error:", e);
+    res.status(500).json({
+      success: false,
+      error: e.message,
+    });
+  }
+});
+
 app.get("/plants/:id", async (req, res) => {
   try {
     const plant = await getPlantById(req.params.id);
