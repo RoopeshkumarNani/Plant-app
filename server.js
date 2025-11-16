@@ -114,34 +114,48 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 
     // Upload with explicit error handling
     console.log(`   Uploading ${fileSourceDesc} to Firebase...`);
-    console.log(`   Bucket object:`, { name: bucket.name, projectId: bucket.projectId });
+    console.log(`   Bucket object:`, { name: bucket.name });
     
     try {
-      // Try using save() method instead of upload()
+      // Use bucket.upload() with buffer directly
       const file = bucket.file(destinationPath);
-      await file.save(fileBuffer, {
-        metadata: {
-          cacheControl: "public, max-age=31536000",
-          contentType: "image/jpeg",
-        },
-        public: true,
-      });
-      console.log("✅ File saved to Firebase Storage successfully");
       
-      // Verify it's public
-      try {
-        await file.makePublic();
-        console.log("✅ File confirmed public in Firebase Storage");
-      } catch (e) {
-        console.warn("⚠️  Could not make file public:", e.message);
-      }
+      console.log(`   About to upload buffer of size: ${fileBuffer.length}`);
+      
+      // Upload the buffer
+      await new Promise((resolve, reject) => {
+        const stream = file.createWriteStream({
+          metadata: {
+            cacheControl: "public, max-age=31536000",
+            contentType: "image/jpeg",
+          },
+          public: true,
+        });
+        
+        stream.on('error', (err) => {
+          console.error("❌ Stream error:", err.message);
+          reject(err);
+        });
+        
+        stream.on('finish', () => {
+          console.log("✅ File stream finished successfully");
+          resolve();
+        });
+        
+        stream.end(fileBuffer);
+      });
+      
+      console.log("✅ File uploaded to Firebase Storage successfully");
       
       // Return public URL
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
       console.log("✅ Firebase Storage URL generated:", publicUrl);
       return publicUrl;
     } catch (fileError) {
-      console.error("❌ File save error:", fileError.message);
+      console.error("❌ Firebase upload error:");
+      console.error("   Message:", fileError.message);
+      console.error("   Code:", fileError.code);
+      if (fileError.errors) console.error("   Details:", fileError.errors);
       throw fileError;
     }
   } catch (e) {
@@ -3013,10 +3027,6 @@ app.get("/admin/test-firebase-upload", async (req, res) => {
       success: false,
       error: e.message,
       stack: e.stack,
-    });
-  }
-});
-
     });
   }
 });
