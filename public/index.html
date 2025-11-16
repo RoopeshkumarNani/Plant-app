@@ -4436,7 +4436,10 @@
                 hist[hist.length - 1].text_kn = plantReply;
                 saveConv(currentPlant.id, hist);
                 appendMessageEl('plant', plantReply, rt, null, null, null, plantReply, plantReply);
-                speak(plantReply);
+                // Use language-specific text for speaking (fallback case)
+                const textToSpeakFallback = plantReply;
+                console.log('🔊 Speaking fallback text (language:', currentLanguage, '):', textToSpeakFallback.substring(0, 50));
+                speak(textToSpeakFallback);
             } finally {
                 hideTyping();
                 document.getElementById('replyText').value = '';
