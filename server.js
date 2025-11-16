@@ -1838,12 +1838,14 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     // Try PlantNet detection FIRST (with timeout) to get species and classify immediately
     // This ensures items go to correct section right away
+    // BUT: If PlantNet times out, we trust the frontend tab selection
     let detectedSpecies = null;
     let detectedType = null;
     
     if ((!species || species === "Unknown") && file.path) {
       try {
         console.log(`🔍 Quick PlantNet detection (5s timeout) before creating entry...`);
+        console.log(`   Frontend tab: ${subjectType || 'not specified'}`);
         const plantnetResult = await Promise.race([
           callPlantNet(file.path),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
@@ -1856,7 +1858,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           species = detectedSpecies; // Update species for entry creation
         }
       } catch (err) {
-        console.log(`⏱️  Quick detection timed out or failed, will use frontend tab selection`);
+        console.log(`⏱️  Quick detection timed out or failed (${err.message}), will use frontend tab selection: ${subjectType || 'plants'}`);
+        // Don't set detectedType - let frontend tab selection take priority
       }
     } else if (species && species !== "Unknown") {
       // User provided species, classify it
@@ -1864,16 +1867,29 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       console.log(`🔍 User species "${species}" → ${detectedType}`);
     }
     
-    // Determine collection: use detected type if available, otherwise use frontend tab
+    // Determine collection: prioritize detected type, then frontend tab, then default to plants
     let subjectCollection = "plants";
+    
+    // Priority 1: Use PlantNet detection if available
     if (detectedType === "flower") {
       subjectCollection = "flowers";
-      console.log(`🌸 Using detected type: flower`);
-    } else if (subjectType && (subjectType === "flower" || subjectType === "flowers")) {
+      console.log(`🌸 Using detected type: flower (from PlantNet)`);
+    } 
+    // Priority 2: Use frontend tab selection (user's choice)
+    // Frontend sends "flowers" (plural) when user is on flowers tab
+    else if (subjectType && (subjectType === "flowers" || subjectType === "flower")) {
       subjectCollection = "flowers";
-      console.log(`🌸 Using frontend tab: flower`);
-    } else {
-      console.log(`🌿 Using frontend tab: plant (or default)`);
+      console.log(`🌸 Using frontend tab: flowers (user selected)`);
+    } 
+    // Priority 3: If PlantNet detected as plant, use that
+    else if (detectedType === "plant") {
+      subjectCollection = "plants";
+      console.log(`🌿 Using detected type: plant (from PlantNet)`);
+    }
+    // Priority 4: Default to plants
+    else {
+      subjectCollection = "plants";
+      console.log(`🌿 Using default: plant`);
     }
     
     db.plants = db.plants || [];
