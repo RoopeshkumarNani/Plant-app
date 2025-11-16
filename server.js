@@ -1954,9 +1954,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       growthDelta: null,
     };
     plant.conversations.push(msgEntry);
-    writeDB(db);
 
-    // Upload to Supabase Storage immediately (before response)
+    // Upload to Supabase Storage IMMEDIATELY (before saving to DB)
     let supabaseUrl = null;
     if (fileBuffer) {
       try {
@@ -1965,19 +1964,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         if (supabaseUrl) {
           console.log("✅ Supabase URL obtained:", supabaseUrl);
           imgEntry.firebaseUrl = supabaseUrl;
-          // Update database with Supabase URL
-          const { error } = await supabase
-            .from("images")
-            .update({ firebase_url: supabaseUrl })
-            .eq("id", imgEntry.id);
-          if (!error) {
-            console.log("✅ Database updated with Supabase URL");
-          }
+        } else {
+          console.warn("⚠️  Supabase upload returned null URL");
         }
       } catch (err) {
         console.warn("⚠️  Supabase upload failed:", err.message);
       }
     }
+
+    // Now save to database with Supabase URL populated (if upload succeeded)
+    writeDB(db);
 
     // respond quickly to the client before doing Firebase upload
     // Firebase upload will happen in background
@@ -2025,33 +2021,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log("🔄 Background processing started for image:", imgEntry.id);
         console.log("   Firebase bucket status - initialized?", !!bucket, "bucket.name:", bucket?.name || "N/A");
         
-        // Upload to Firebase Storage in background (optional - if it fails, continue anyway)
-        console.log("📤 Background: Attempting Supabase Storage upload...");
-        let supabaseUrl = null;
-        try {
-          // Upload to Supabase Storage
-          supabaseUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
-          
-          if (supabaseUrl) {
-            console.log("✅ Background: Supabase URL obtained:", supabaseUrl);
-            imgEntry.firebaseUrl = supabaseUrl;
-            console.log("✅ Background: Setting firebaseUrl to Supabase URL");
-            
-            // Update the database with the Supabase URL
-            const { error: updateError } = await supabase
-              .from("images")
-              .update({ firebase_url: supabaseUrl })
-              .eq("id", imgEntry.id);
-            
-            if (updateError) {
-              console.warn("⚠️  Error updating image URL in database:", updateError);
-            } else {
-              console.log("✅ Background: Database updated with Supabase URL");
-            }
-          }
-        } catch (supabaseError) {
-          console.warn("⚠️  Supabase upload error (non-blocking):", supabaseError.message);
-        }
+        // Note: Supabase Storage upload already completed synchronously before response
 
         // image analysis
         let area = 0;
