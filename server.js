@@ -389,6 +389,21 @@ async function ensureJimpCompatibleImage(imagePath) {
 
 const app = express();
 
+// Initialize fresh database on production startup
+if (process.env.NODE_ENV === 'production') {
+  const initDbPath = "/app/data/db.json";
+  const initDataDir = path.dirname(initDbPath);
+  try {
+    if (!fs.existsSync(initDataDir)) {
+      fs.mkdirSync(initDataDir, { recursive: true });
+    }
+    fs.writeFileSync(initDbPath, JSON.stringify({ plants: [], flowers: [] }, null, 2));
+    console.log("✅ Production startup: Initialized fresh database");
+  } catch (e) {
+    console.error("⚠️ Could not initialize DB on startup:", e.message);
+  }
+}
+
 // Enable gzip compression for all responses
 app.use(compression());
 
