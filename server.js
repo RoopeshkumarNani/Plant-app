@@ -3382,11 +3382,19 @@ app.post("/tts/eleven", requireToken, express.json(), async (req, res) => {
 // Reset endpoint for testing - clears all plants and flowers
 app.post("/admin/reset", async (req, res) => {
   try {
+    const dbPath = path.join(__dirname, "data", "db.json");
+    
+    // Force delete the file if it exists
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+      console.log("✅ Database file deleted");
+    }
+    
     const emptyDb = { plants: [], flowers: [] };
 
     // Clear database
     await writeDB(emptyDb);
-    console.log("✅ Database cleared");
+    console.log("✅ Database reset with fresh empty data");
 
     res.json({
       success: true,
