@@ -1956,6 +1956,29 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     plant.conversations.push(msgEntry);
     writeDB(db);
 
+    // Upload to Supabase Storage immediately (before response)
+    let supabaseUrl = null;
+    if (fileBuffer) {
+      try {
+        console.log("📤 Uploading to Supabase Storage...");
+        supabaseUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
+        if (supabaseUrl) {
+          console.log("✅ Supabase URL obtained:", supabaseUrl);
+          imgEntry.firebaseUrl = supabaseUrl;
+          // Update database with Supabase URL
+          const { error } = await supabase
+            .from("images")
+            .update({ firebase_url: supabaseUrl })
+            .eq("id", imgEntry.id);
+          if (!error) {
+            console.log("✅ Database updated with Supabase URL");
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️  Supabase upload failed:", err.message);
+      }
+    }
+
     // respond quickly to the client before doing Firebase upload
     // Firebase upload will happen in background
     try {
