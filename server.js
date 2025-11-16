@@ -3380,27 +3380,17 @@ app.post("/tts/eleven", requireToken, express.json(), async (req, res) => {
 });
 
 // Reset endpoint for testing - clears all plants and flowers
-app.post("/admin/reset", (req, res) => {
+app.post("/admin/reset", async (req, res) => {
   try {
     const emptyDb = { plants: [], flowers: [] };
 
-    // Clear in-memory and file
-    writeDB(emptyDb);
-
-    // Also clear Firebase
-    (async () => {
-      try {
-        await admin.database().ref("plants").set({});
-        await admin.database().ref("flowers").set({});
-        console.log("✅ Firebase reset complete");
-      } catch (e) {
-        console.error("Firebase reset error:", e.message);
-      }
-    })();
+    // Clear database
+    await writeDB(emptyDb);
+    console.log("✅ Database cleared");
 
     res.json({
       success: true,
-      message: "Database reset - ready for fresh uploads",
+      message: "Database reset - all data cleared",
     });
   } catch (e) {
     console.error("Reset error:", e);
