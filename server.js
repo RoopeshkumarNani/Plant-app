@@ -3044,6 +3044,25 @@ app.post("/admin/clear-all", requireToken, async (req, res) => {
       console.error("⚠️  Storage cleanup error:", storageErr.message);
     }
     
+    // 2b. Delete all files from Firebase Storage (if it exists)
+    if (bucket) {
+      try {
+        console.log("🗑️  Deleting files from Firebase Storage...");
+        const [firebaseFiles] = await bucket.getFiles();
+        if (firebaseFiles && firebaseFiles.length > 0) {
+          const deletePromises = firebaseFiles.map(file => file.delete());
+          await Promise.all(deletePromises);
+          console.log(`✅ Deleted ${firebaseFiles.length} files from Firebase Storage`);
+        } else {
+          console.log("ℹ️  No files found in Firebase Storage");
+        }
+      } catch (firebaseErr) {
+        console.error("⚠️  Firebase Storage cleanup error:", firebaseErr.message);
+      }
+    } else {
+      console.log("ℹ️  Firebase Storage not initialized, skipping");
+    }
+    
     // 3. Delete local upload files
     try {
       console.log("🗑️  Deleting local upload files...");
