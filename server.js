@@ -4337,12 +4337,26 @@ app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
       .select('*')
       .or('supabase_url.is.null,supabase_url.eq.');
     
+    // Also check for empty string URLs
+    const { data: emptyUrlImages } = await supabase
+      .from('images')
+      .select('*')
+      .eq('supabase_url', '');
+    
+    // Combine both sets
+    const allImagesNeedingFix = [
+      ...(images || []),
+      ...(emptyUrlImages || [])
+    ].filter((img, index, self) => 
+      index === self.findIndex(i => i.id === img.id)
+    );
+    
     if (fetchError) {
       console.error("❌ Error fetching images:", fetchError.message);
       return res.status(500).json({ error: fetchError.message });
     }
     
-    if (!images || images.length === 0) {
+    if (!allImagesNeedingFix || allImagesNeedingFix.length === 0) {
       return res.json({ 
         success: true, 
         message: "No images need fixing - all images have URLs",
@@ -4350,13 +4364,13 @@ app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
       });
     }
     
-    console.log(`📋 Found ${images.length} images without URLs, fixing...`);
+    console.log(`📋 Found ${allImagesNeedingFix.length} images without URLs, fixing...`);
     
     let fixedCount = 0;
     const backendUrl = 'https://plant-app-backend-h28h.onrender.com';
     
     // Update each image with a fallback URL
-    for (const img of images) {
+    for (const img of allImagesNeedingFix) {
       if (!img.filename) {
         console.warn(`⚠️  Image ${img.id} has no filename, skipping`);
         continue;
@@ -4380,9 +4394,9 @@ app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
     
     return res.json({ 
       success: true, 
-      message: `Fixed ${fixedCount} out of ${images.length} images`,
+      message: `Fixed ${fixedCount} out of ${allImagesNeedingFix.length} images`,
       fixed: fixedCount,
-      total: images.length
+      total: allImagesNeedingFix.length
     });
   } catch (e) {
     console.error("❌ Fix image URLs failed:", e);
