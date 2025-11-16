@@ -2910,6 +2910,57 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     // Make sure profile is persisted to database
     ensureProfile(plant);
     writeDB(db);
+    
+    // Save plant reply to Supabase and update profile
+    try {
+      const db = readDB();
+      const isFlower = db.flowers && db.flowers.some(f => f.id === plant.id);
+      const subjectIdField = isFlower ? "flower_id" : "plant_id";
+      const table = isFlower ? "flowers" : "plants";
+      
+      // Save conversation
+      const { error: plantConvError } = await supabase
+        .from('conversations')
+        .insert({
+          id: plantEntry.id,
+          [subjectIdField]: plant.id,
+          image_id: plantEntry.imageId || null,
+          role: 'plant',
+          text: plantEntry.text,
+          text_en: plantEntry.text_en || null,
+          text_kn: plantEntry.text_kn || null,
+          time: plantEntry.time,
+          growth_delta: plantEntry.growthDelta || null
+        });
+      
+      if (plantConvError) {
+        console.error("❌ Error saving plant conversation to Supabase:", plantConvError.message);
+      } else {
+        console.log("✅ Saved plant conversation to Supabase:", plantEntry.id);
+      }
+      
+      // Update plant/flower profile in Supabase
+      const profile = ensureProfile(plant);
+      const { error: profileError } = await supabase
+        .from(table)
+        .update({
+          health_status: profile.healthStatus || "stable",
+          care_score: profile.careScore || 50,
+          user_care_style: profile.userCareStyle || null,
+          preferred_light: profile.preferredLight || null,
+          watering_frequency: profile.wateringFrequency || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', plant.id);
+      
+      if (profileError) {
+        console.error("❌ Error updating profile in Supabase:", profileError.message);
+      } else {
+        console.log("✅ Updated profile in Supabase for:", plant.id);
+      }
+    } catch (supabaseErr) {
+      console.error("⚠️  Supabase save failed (non-blocking):", supabaseErr.message);
+    }
 
     res.json({
       success: true,
