@@ -57,7 +57,19 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
 }
 
 // Reference to Firebase Realtime Database
-const db = admin.database();
+let db = null;
+if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+  try {
+    db = admin.database();
+    console.log("✅ Firebase Realtime Database initialized");
+  } catch (e) {
+    console.error("⚠️  Firebase Database initialization failed:", e.message);
+    console.error("Stack:", e.stack);
+    db = null;
+  }
+} else {
+  console.warn("⚠️  Firebase credentials not found - Database will use local storage only");
+}
 
 // Reference to Firebase Storage Bucket
 let bucket = null;
@@ -241,45 +253,77 @@ async function getFlowers() {
 
 async function addPlant(plant) {
   try {
-    const plantRef = db.ref("plants").push();
-    plant.id = plantRef.key;
-    plant.id_backup = plantRef.key;
-    await plantRef.set(plant);
+    if (db) {
+      const plantRef = db.ref("plants").push();
+      plant.id = plantRef.key;
+      plant.id_backup = plantRef.key;
+      await plantRef.set(plant);
+    } else {
+      // Fallback: generate ID locally if Firebase not available
+      if (!plant.id) {
+        plant.id = require("uuid").v4();
+        plant.id_backup = plant.id;
+      }
+    }
     return plant;
   } catch (e) {
     console.error("Error adding plant to Firebase:", e.message);
-    throw e;
+    // Fallback: generate ID locally if Firebase fails
+    if (!plant.id) {
+      plant.id = require("uuid").v4();
+      plant.id_backup = plant.id;
+    }
+    return plant;
   }
 }
 
 async function addFlower(flower) {
   try {
-    const flowerRef = db.ref("flowers").push();
-    flower.id = flowerRef.key;
-    flower.id_backup = flowerRef.key;
-    await flowerRef.set(flower);
+    if (db) {
+      const flowerRef = db.ref("flowers").push();
+      flower.id = flowerRef.key;
+      flower.id_backup = flowerRef.key;
+      await flowerRef.set(flower);
+    } else {
+      // Fallback: generate ID locally if Firebase not available
+      if (!flower.id) {
+        flower.id = require("uuid").v4();
+        flower.id_backup = flower.id;
+      }
+    }
     return flower;
   } catch (e) {
     console.error("Error adding flower to Firebase:", e.message);
-    throw e;
+    // Fallback: generate ID locally if Firebase fails
+    if (!flower.id) {
+      flower.id = require("uuid").v4();
+      flower.id_backup = flower.id;
+    }
+    return flower;
   }
 }
 
 async function updatePlant(id, updates) {
   try {
-    await db.ref(`plants/${id}`).update(updates);
+    if (db) {
+      await db.ref(`plants/${id}`).update(updates);
+    }
+    // If Firebase not available, updates will be handled by local db.json writes
   } catch (e) {
     console.error("Error updating plant in Firebase:", e.message);
-    throw e;
+    // Non-blocking: continue with local storage
   }
 }
 
 async function updateFlower(id, updates) {
   try {
-    await db.ref(`flowers/${id}`).update(updates);
+    if (db) {
+      await db.ref(`flowers/${id}`).update(updates);
+    }
+    // If Firebase not available, updates will be handled by local db.json writes
   } catch (e) {
     console.error("Error updating flower in Firebase:", e.message);
-    throw e;
+    // Non-blocking: continue with local storage
   }
 }
 
@@ -305,25 +349,31 @@ async function getFlowerById(id) {
 
 async function deletePlantImage(plantId, imageId) {
   try {
-    await db.ref(`plants/${plantId}/images/${imageId}`).remove();
+    if (db) {
+      await db.ref(`plants/${plantId}/images/${imageId}`).remove();
+    }
+    // If Firebase not available, deletion will be handled by local db.json writes
   } catch (e) {
     console.error("Error deleting plant image from Firebase:", e.message);
-    throw e;
+    // Non-blocking: continue with local storage
   }
 }
 
 async function deleteFlowerImage(flowerId, imageId) {
   try {
-    await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
+    if (db) {
+      await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
+    }
+    // If Firebase not available, deletion will be handled by local db.json writes
   } catch (e) {
     console.error("Error deleting flower image from Firebase:", e.message);
-    throw e;
+    // Non-blocking: continue with local storage
   }
 }
 
 // Sync function: Write local data to Firebase in background
 async function syncDBToFirebase(dbData) {
-  if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
+  if (!db || !process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
     return; // Firebase not configured, skip
   }
   try {
@@ -3069,6 +3119,7 @@ app.get("/plants", async (req, res) => {
 app.get("/admin/firebase-status", (req, res) => {
   const status = {
     firebaseInitialized: !!admin.apps.length,
+    databaseInitialized: !!db,
     bucketInitialized: !!bucket,
     bucketName: bucket ? bucket.name : null,
     credentials: {
@@ -3077,7 +3128,8 @@ app.get("/admin/firebase-status", (req, res) => {
       hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
       hasPrivateKeyId: !!process.env.FIREBASE_PRIVATE_KEY_ID,
     },
-    status: bucket ? "✅ Ready" : "❌ Not initialized",
+    status: (db && bucket) ? "✅ Ready" : db ? "⚠️ Database only" : bucket ? "⚠️ Storage only" : "❌ Not initialized",
+    fallbackMode: !db && !bucket ? "Using local db.json storage" : null,
   };
   res.json(status);
 });

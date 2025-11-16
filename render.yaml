@@ -3,11 +3,14 @@ services:
     name: plant-app-backend
     runtime: node
     startCommand: npm start
-    autoDeploy: false
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
     disks:
       - name: uploads
         mountPath: /app/uploads
+        sizeGB: 1
+      - name: data
+        mountPath: /app/data
         sizeGB: 1
