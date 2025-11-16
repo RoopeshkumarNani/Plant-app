@@ -1980,16 +1980,19 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
             // Smart auto-categorization: if species suggests it's a flower but it's in plants, move it
             if (plantnet.species) {
               const detectedType = classifyAsFlowerOrPlant(plantnet.species);
-              const currentCollection =
-                subjectCollection === "flowers" ? "flower" : "plant";
-
+              
+              // Find which collection the target is actually in (not just what we think)
+              const isInPlants = freshDb.plants && freshDb.plants.some(p => p.id === target.id);
+              const isInFlowers = freshDb.flowers && freshDb.flowers.some(p => p.id === target.id);
+              const actualCollection = isInFlowers ? "flower" : (isInPlants ? "plant" : null);
+              
               console.log(
-                `🔍 Classification check: species="${plantnet.species}", detected=${detectedType}, current=${currentCollection}`
+                `🔍 Classification check: species="${plantnet.species}", detected=${detectedType}, actual=${actualCollection}`
               );
 
-              if (detectedType !== currentCollection) {
+              if (detectedType !== actualCollection && actualCollection) {
                 console.log(
-                  `🌸 Auto-categorization: "${plantnet.species}" detected as ${detectedType}, moving from ${currentCollection} to ${detectedType}`
+                  `🌸 Auto-categorization: "${plantnet.species}" detected as ${detectedType}, moving from ${actualCollection} to ${detectedType}`
                 );
 
                 // Ensure both collections exist
@@ -1998,7 +2001,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
                 // Remove from current collection
                 const removeFrom =
-                  currentCollection === "flower" ? "flowers" : "plants";
+                  actualCollection === "flower" ? "flowers" : "plants";
                 const removeIdx = freshDb[removeFrom].findIndex(
                   (p) => p.id === target.id
                 );
@@ -2020,8 +2023,6 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
                     `⚠️  Item already exists in ${addTo}, skipping duplicate add`
                   );
                 }
-
-                subjectCollection = addTo;
 
                 // Save DB immediately and notify client right away (don't wait for other processing)
                 writeDB(freshDb);
