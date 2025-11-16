@@ -3021,10 +3021,22 @@
         function getImageUrl(imageOrFilename) {
             if (!imageOrFilename) return '';
 
-            // If it's an object with firebaseUrl, use that first (persistent storage)
+            // Check for Supabase Storage URL first (new system)
+            if (typeof imageOrFilename === 'object' && imageOrFilename.url) {
+                console.log('✅ Using Supabase URL:', imageOrFilename.url);
+                return imageOrFilename.url;
+            }
+
+            // If it's an object with firebaseUrl, use that (legacy)
             if (typeof imageOrFilename === 'object' && imageOrFilename.firebaseUrl) {
-                console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
-                return imageOrFilename.firebaseUrl;
+                // Check if it's a valid URL (not broken)
+                const url = imageOrFilename.firebaseUrl;
+                if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+                    console.log('✅ Using Firebase URL:', url);
+                    return url;
+                } else {
+                    console.warn('⚠️  Invalid Firebase URL, falling back to filename');
+                }
             }
 
             // Otherwise extract filename  
@@ -3040,6 +3052,14 @@
             const url = '/uploads/' + filename;
             console.log('📸 Image URL (fallback):', url);
             return url;
+        }
+        
+        // Add error handler for broken images
+        function handleImageError(img) {
+            console.warn('❌ Image failed to load:', img.src);
+            // Replace with placeholder
+            img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999" font-size="14">Image not found</text></svg>';
+            img.style.opacity = '0.5';
         }
 
         // Lazy loading for images - only load when visible on screen

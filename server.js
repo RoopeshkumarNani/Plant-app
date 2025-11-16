@@ -3019,27 +3019,62 @@ app.post("/admin/clear-all", requireToken, async (req, res) => {
       // Continue with local cleanup
     }
     
-    // 2. Delete all files from Supabase Storage
+    // 2. Delete all files from Supabase Storage (recursively)
     try {
       console.log("🗑️  Deleting files from Supabase Storage...");
-      const { data: files, error: listError } = await supabase.storage
-        .from('images')
-        .list('', { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
       
-      if (!listError && files && files.length > 0) {
-        const filePaths = files.map(f => f.name);
-        const { error: deleteError } = await supabase.storage
+      // Function to recursively list and delete all files
+      async function deleteAllFiles(folder = '') {
+        const { data: files, error: listError } = await supabase.storage
           .from('images')
-          .remove(filePaths);
+          .list(folder, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
         
-        if (deleteError) {
-          console.error("⚠️  Storage deletion error:", deleteError.message);
-        } else {
-          console.log(`✅ Deleted ${filePaths.length} files from Supabase Storage`);
+        if (listError) {
+          console.error(`⚠️  Error listing folder ${folder}:`, listError.message);
+          return [];
         }
-      } else {
-        console.log("ℹ️  No files found in Supabase Storage (or list failed)");
+        
+        if (!files || files.length === 0) {
+          return [];
+        }
+        
+        const filePaths = [];
+        const folderPaths = [];
+        
+        for (const file of files) {
+          const fullPath = folder ? `${folder}/${file.name}` : file.name;
+          if (file.id) {
+            // It's a file
+            filePaths.push(fullPath);
+          } else {
+            // It's a folder, recurse
+            folderPaths.push(fullPath);
+          }
+        }
+        
+        // Delete files in current folder
+        if (filePaths.length > 0) {
+          const { error: deleteError } = await supabase.storage
+            .from('images')
+            .remove(filePaths);
+          
+          if (deleteError) {
+            console.error(`⚠️  Error deleting files in ${folder}:`, deleteError.message);
+          } else {
+            console.log(`✅ Deleted ${filePaths.length} files from ${folder || 'root'}`);
+          }
+        }
+        
+        // Recurse into subfolders
+        for (const folderPath of folderPaths) {
+          await deleteAllFiles(folderPath);
+        }
+        
+        return filePaths;
       }
+      
+      const deletedFiles = await deleteAllFiles('');
+      console.log(`✅ Total deleted from Supabase Storage: ${deletedFiles.length} files`);
     } catch (storageErr) {
       console.error("⚠️  Storage cleanup error:", storageErr.message);
     }
