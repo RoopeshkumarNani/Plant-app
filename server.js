@@ -1591,8 +1591,16 @@ async function callOpenAIForMessage(prompt, language = "en") {
   if (!key) return null;
   // Simple ChatCompletion call (assumes v1/chat/completions compatible)
   try {
-    const systemPrompt = getSystemPrompt(language);
-    console.log(`[LLM] Using system prompt for language: ${language}`);
+    let systemPrompt = getSystemPrompt(language);
+    
+    // CRITICAL: For Kannada, add even stronger language enforcement at the START of system prompt
+    if (language === "kn") {
+      systemPrompt = `⚠️⚠️⚠️ CRITICAL: YOU MUST REPLY ONLY IN KANNADA (ಕನ್ನಡ). NEVER USE ENGLISH. NEVER MIX LANGUAGES. EVERY WORD MUST BE IN KANNADA. ⚠️⚠️⚠️\n\n${systemPrompt}`;
+    }
+    
+    console.log(`[LLM] Language: ${language}, System prompt length: ${systemPrompt.length}`);
+    console.log(`[LLM] System prompt preview: ${systemPrompt.substring(0, 200)}...`);
+    
     const res = await withTimeout(
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -2892,7 +2900,7 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
 
     // Add language-specific instruction - STRONGER for Kannada
     const languageInstruction = lang === "kn" 
-      ? "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT ⚠️\n\nThe user is chatting in Kannada (ಕನ್ನಡ). You MUST reply ONLY in Kannada. DO NOT reply in English. DO NOT mix languages. Use ONLY Kannada characters and words. Use natural, colloquial Kannada that a native Kannada speaker would use in everyday conversation. Use authentic Kannada expressions and tone. Be warm and friendly in Kannada. If you reply in English, you have failed this instruction."
+      ? "\n\n🚨🚨🚨 ABSOLUTE REQUIREMENT: REPLY ONLY IN KANNADA (ಕನ್ನಡ) 🚨🚨🚨\n\nYou MUST write EVERY SINGLE WORD in Kannada. DO NOT use English. DO NOT mix languages. DO NOT use English words. Use ONLY Kannada script (ಕನ್ನಡ). The user is speaking Kannada, so you MUST respond in Kannada. This is non-negotiable. If you use even one English word, you have failed. Write naturally in colloquial Kannada like a native speaker would text a friend."
       : "\n\nReply naturally in English.";
     
     const prompt = `${speciesLine}\n${speciesInstruction}\nYou're ${
@@ -2959,9 +2967,52 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     // Handle language-specific responses
     let plantReplyKannada = null;
     if (lang === "kn" && plantReply) {
-      // Response should already be in Kannada (from system prompt + language instruction)
-      plantReplyKannada = plantReply;
-      console.log("[/reply] Response is in Kannada:", plantReplyKannada);
+      // Check if response is actually in Kannada (contains Kannada characters)
+      const kannadaRegex = /[\u0C80-\u0CFF]/;
+      const isActuallyKannada = kannadaRegex.test(plantReply);
+      
+      if (!isActuallyKannada) {
+        console.warn("[/reply] ⚠️ Response is NOT in Kannada! Forcing translation...");
+        // Force translation to Kannada
+        try {
+          const transRes = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [
+                {
+                  role: "system",
+                  content: "You are a Kannada translator. Translate the following text to natural, colloquial Kannada. Use ONLY Kannada script. Respond with ONLY the translated text, nothing else."
+                },
+                {
+                  role: "user",
+                  content: `Translate to Kannada: "${plantReply}"`
+                }
+              ],
+              temperature: 0.3,
+              max_tokens: 200,
+            }),
+          });
+          if (transRes.ok) {
+            const transData = await transRes.json();
+            plantReplyKannada = transData.choices?.[0]?.message?.content?.trim() || plantReply;
+            console.log("[/reply] ✅ Translated to Kannada:", plantReplyKannada);
+          } else {
+            plantReplyKannada = plantReply; // Fallback
+          }
+        } catch (transErr) {
+          console.error("[/reply] Translation failed:", transErr.message);
+          plantReplyKannada = plantReply; // Fallback
+        }
+      } else {
+        // Response is already in Kannada
+        plantReplyKannada = plantReply;
+        console.log("[/reply] ✅ Response is in Kannada:", plantReplyKannada.substring(0, 50));
+      }
     } else if (lang === "en" && plantReply) {
       // If response is in English, also generate Kannada version for reference
       try {
