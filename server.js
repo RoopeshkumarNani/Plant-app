@@ -221,7 +221,7 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 // Firebase Database Helper Functions
 async function getPlants() {
   try {
-    const db = readDB();
+    const db = await readDB();
     return db.plants || [];
   } catch (e) {
     console.error("Error reading plants:", e.message);
@@ -231,7 +231,7 @@ async function getPlants() {
 
 async function getFlowers() {
   try {
-    const db = readDB();
+    const db = await readDB();
     return db.flowers || [];
   } catch (e) {
     console.error("Error reading flowers:", e.message);
