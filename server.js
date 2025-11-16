@@ -246,6 +246,18 @@ async function getPlantWithRelations(id, type = 'plant') {
       .eq(type === 'flower' ? 'flower_id' : 'plant_id', id)
       .order('uploaded_at', { ascending: true });
     
+    // Transform Supabase images to match frontend format
+    const transformedImages = (images || []).map(img => ({
+      id: img.id,
+      filename: img.filename,
+      uploadedAt: img.uploaded_at || img.uploadedAt,
+      area: img.area,
+      // Map supabase_url to both url (for new system) and firebaseUrl (for legacy compatibility)
+      url: img.supabase_url || img.url,
+      firebaseUrl: img.supabase_url || img.firebase_url || img.firebaseUrl || 
+        `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${img.filename}`
+    }));
+    
     // Get conversations
     const { data: conversations } = await supabase
       .from('conversations')
@@ -253,10 +265,22 @@ async function getPlantWithRelations(id, type = 'plant') {
       .eq(type === 'flower' ? 'flower_id' : 'plant_id', id)
       .order('time', { ascending: true });
     
+    // Transform conversations to match frontend format
+    const transformedConversations = (conversations || []).map(conv => ({
+      id: conv.id,
+      role: conv.role,
+      text: conv.text,
+      text_en: conv.text_en,
+      text_kn: conv.text_kn,
+      time: conv.time,
+      imageId: conv.image_id,
+      growthDelta: conv.growth_delta
+    }));
+    
     return {
       ...subject,
-      images: images || [],
-      conversations: conversations || [],
+      images: transformedImages,
+      conversations: transformedConversations,
       profile: {
         adoptedDate: subject.adopted_date,
         userCareStyle: subject.user_care_style,
@@ -2062,8 +2086,31 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     };
     plant.conversations.push(msgEntry);
     
-    // Set firebaseUrl to the public /uploads/ URL
-    imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
+    // Upload to Supabase Storage FIRST (before saving to DB)
+    let supabaseStorageUrl = null;
+    if (fileBuffer) {
+      try {
+        console.log(`📤 Uploading compressed image to Supabase Storage...`);
+        supabaseStorageUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
+        if (supabaseStorageUrl) {
+          console.log(`✅ Image uploaded to Supabase Storage: ${supabaseStorageUrl}`);
+          // Update imgEntry with Supabase URL
+          imgEntry.url = supabaseStorageUrl;
+          imgEntry.firebaseUrl = supabaseStorageUrl; // For backward compatibility
+        } else {
+          console.warn(`⚠️  Supabase Storage upload failed, using local URL`);
+          // Fallback to local /uploads/ URL
+          imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
+        }
+      } catch (supabaseUploadErr) {
+        console.error(`❌ Supabase Storage upload error:`, supabaseUploadErr.message);
+        // Fallback to local /uploads/ URL
+        imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
+      }
+    } else {
+      // No file buffer, use local URL
+      imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
+    }
     
     // Save to local database (for backward compatibility and fallback)
     await writeDB(db);
@@ -2106,15 +2153,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log(`ℹ️  ${table} already exists in Supabase: ${plant.id}`);
       }
       
-      // Insert image
+      // Insert image with Supabase Storage URL
+      // Note: filename in DB is original, but actual file in storage might be .webp
       const { error: imageError } = await supabase
         .from('images')
         .insert({
           id: imgEntry.id,
           [subjectIdField]: plant.id,
-          filename: imgEntry.filename,
-          storage_path: imgEntry.filename,
-          supabase_url: imgEntry.firebaseUrl,
+          filename: imgEntry.filename, // Keep original filename for reference
+          storage_path: supabaseStorageUrl ? imgEntry.filename.replace(/\.(jpg|jpeg|png)$/i, '.webp') : imgEntry.filename,
+          supabase_url: supabaseStorageUrl || imgEntry.firebaseUrl, // Use Supabase Storage URL if available
           uploaded_at: imgEntry.uploadedAt,
           area: imgEntry.area || null,
           file_size: file.size || null
