@@ -1838,14 +1838,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     // Try PlantNet detection FIRST (with timeout) to get species and classify immediately
     // This ensures items go to correct section right away
-    // BUT: If PlantNet times out, we trust the frontend tab selection
+    // BUT: If PlantNet times out, we trust the frontend tab selection (flowers/plants)
     let detectedSpecies = null;
     let detectedType = null;
+    
+    console.log(`📋 Upload info: subjectType="${subjectType}", species="${species || 'Unknown'}", owner="${owner}"`);
     
     if ((!species || species === "Unknown") && file.path) {
       try {
         console.log(`🔍 Quick PlantNet detection (5s timeout) before creating entry...`);
-        console.log(`   Frontend tab: ${subjectType || 'not specified'}`);
+        console.log(`   Frontend tab: ${subjectType || 'not specified'} (will use this if PlantNet times out)`);
         const plantnetResult = await Promise.race([
           callPlantNet(file.path),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
