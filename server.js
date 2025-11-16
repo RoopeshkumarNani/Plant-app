@@ -1729,24 +1729,27 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     
     const db = await readDB();
 
-    // Fast-path: create minimal image entry and placeholder message, persist quickly
-    // First, try to detect if it's a plant or flower based on species (if provided)
-    let detectedType = null;
-    if (species && species !== "Unknown") {
-      detectedType = classifyAsFlowerOrPlant(species);
-      console.log(`🔍 Initial classification: species="${species}" → ${detectedType}`);
-    }
-    
-    // Determine subjectCollection: use detected type if available, otherwise use subjectType from frontend
+    // Determine initial collection based on frontend subjectType (user's tab selection)
+    // PlantNet detection happens in background and will move items if needed
     let subjectCollection = "plants";
-    if (detectedType === "flower") {
-      subjectCollection = "flowers";
-      console.log(`🌸 Using detected type: flower`);
-    } else if (subjectType && (subjectType === "flower" || subjectType === "flowers")) {
+    if (subjectType && (subjectType === "flower" || subjectType === "flowers")) {
       subjectCollection = "flowers";
       console.log(`🌸 Using frontend subjectType: flower`);
     } else {
-      console.log(`🌿 Defaulting to: plant`);
+      console.log(`🌿 Using frontend subjectType: plant (or default)`);
+    }
+    
+    // If user provided species, classify it immediately
+    let detectedType = null;
+    if (species && species !== "Unknown") {
+      detectedType = classifyAsFlowerOrPlant(species);
+      if (detectedType === "flower" && subjectCollection !== "flowers") {
+        subjectCollection = "flowers";
+        console.log(`🌸 User species "${species}" classified as flower, switching collection`);
+      } else if (detectedType === "plant" && subjectCollection !== "plants") {
+        subjectCollection = "plants";
+        console.log(`🌿 User species "${species}" classified as plant, switching collection`);
+      }
     }
     
     db.plants = db.plants || [];
@@ -1813,15 +1816,23 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       if (!plant) {
         plant = {
           id: uuidv4(),
-          species: species || "Unknown",
+          species: species || detectedSpecies || "Unknown",
           nickname: nickname || "",
           images: [],
           conversations: [],
           owner: owner, // Always set owner (already validated above)
         };
+        // Store PlantNet identification if we detected it
+        if (detectedSpecies) {
+          plant.identification = {
+            species: detectedSpecies,
+            probability: null, // Will be updated in background
+            detectedAt: new Date().toISOString()
+          };
+        }
         // Use the detected collection (which may differ from requestedType)
         db[subjectCollection].push(plant);
-        console.log(`✅ Created new ${subjectCollection.slice(0, -1)} with owner: ${owner}`);
+        console.log(`✅ Created new ${subjectCollection.slice(0, -1)} with owner: ${owner}, species: ${plant.species}`);
       } else {
         // Update owner if it changed
         if (owner && plant.owner !== owner) {
