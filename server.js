@@ -1954,25 +1954,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       growthDelta: null,
     };
     plant.conversations.push(msgEntry);
-
-    // Upload to Supabase Storage IMMEDIATELY (before saving to DB)
-    let supabaseUrl = null;
-    if (fileBuffer) {
-      try {
-        console.log("📤 Uploading to Supabase Storage...");
-        supabaseUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
-        if (supabaseUrl) {
-          console.log("✅ Supabase URL obtained:", supabaseUrl);
-          imgEntry.firebaseUrl = supabaseUrl;
-        } else {
-          console.warn("⚠️  Supabase upload returned null URL");
-        }
-      } catch (err) {
-        console.warn("⚠️  Supabase upload failed:", err.message);
-      }
-    }
-
-    // Now save to database with Supabase URL populated (if upload succeeded)
+    
+    // Set firebaseUrl to the public /uploads/ URL
+    imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
+    
+    // Save to database
     writeDB(db);
 
     // respond quickly to the client before doing Firebase upload
