@@ -4815,14 +4815,36 @@
                         try {
 
                             const delOpts = { method: 'DELETE' };
-                            if (INVITE_TOKEN) delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
+                            if (typeof INVITE_TOKEN !== 'undefined' && INVITE_TOKEN) {
+                                delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
+                            }
 
                             // Use explicit subject type if available to pick correct endpoint deterministically
                             const kind = plant._type === 'flower' ? 'flowers' : 'plants';
                             const url = `/${kind}/${plant.id}/images/${img.id}`;
                             const r = await fetch(url, delOpts);
-                            const txt = await r.text();
-                            if (!r.ok) return alert('Delete failed: ' + (txt || r.status));
+                            
+                            // Try to parse as JSON first, fallback to text
+                            let errorMsg = '';
+                            try {
+                                const contentType = r.headers.get('content-type');
+                                if (contentType && contentType.includes('application/json')) {
+                                    const json = await r.json();
+                                    errorMsg = json.error || json.message || 'Delete failed';
+                                } else {
+                                    const txt = await r.text();
+                                    // If it looks like HTML, show a generic error
+                                    if (txt.trim().startsWith('<')) {
+                                        errorMsg = `Delete failed: HTTP ${r.status}`;
+                                    } else {
+                                        errorMsg = txt || `Delete failed: HTTP ${r.status}`;
+                                    }
+                                }
+                            } catch (parseErr) {
+                                errorMsg = `Delete failed: HTTP ${r.status}`;
+                            }
+                            
+                            if (!r.ok) return alert(errorMsg);
 
                             // remove from UI
                             removeImageUI(img.filename);
