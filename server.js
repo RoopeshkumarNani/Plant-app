@@ -1583,12 +1583,12 @@ async function callOpenAIForMessage(prompt, language = "en") {
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
           ],
-          max_tokens: 150,
-          // Higher temperature for more natural, friend-like responses
-          temperature: 0.85,
+          max_tokens: 200,
+          // Higher temperature for more natural, varied, friend-like responses
+          temperature: 0.9,
           top_p: 0.95,
-          frequency_penalty: 0.3,
-          presence_penalty: 0.4,
+          frequency_penalty: 0.5, // Higher to discourage repetition
+          presence_penalty: 0.6, // Higher to encourage new topics/expressions
         }),
       }),
       9000
@@ -1647,12 +1647,15 @@ async function callOpenAIForMessage(prompt, language = "en") {
               },
               body: JSON.stringify({
                 model: "gpt-4o-mini",
-                messages: [{ role: "user", content: prompt }],
-                max_tokens: 180,
+                messages: [
+                  { role: "system", content: systemPrompt }, // Include system prompt in retry!
+                  { role: "user", content: prompt }
+                ],
+                max_tokens: 200,
                 temperature: 0.95,
                 top_p: 0.95,
-                frequency_penalty: 0.0,
-                presence_penalty: 0.4,
+                frequency_penalty: 0.5, // Match main call
+                presence_penalty: 0.6, // Match main call
               }),
             }),
             9000
@@ -2871,7 +2874,7 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     
     const prompt = `${speciesLine}\n${speciesInstruction}\nYou're ${
       plant.nickname ? plant.nickname : `a ${plant.species || "plant"}`
-    } (${plant.species || "unknown species"}). You live with this person and chat with them like a friend.\n\nWhat you remember:\n${profileSummary}\n\nRecent photos:\n${imageInfo || "No recent photos"}\n\nRecent chat:\n${recent}\n\nThey just said: "${text}"${languageInstruction}\n\nReply like you're texting them - casual, natural, real. 1-2 sentences usually. Be yourself - react to what they said. If they mentioned watering you, react to that. If they're asking how you are, tell them honestly but casually. Don't be formal or robotic.`;
+    } (${plant.species || "unknown species"}). You live with this person and chat with them like a friend.\n\nWhat you remember:\n${profileSummary}\n\nRecent photos:\n${imageInfo || "No recent photos"}\n\nRecent chat:\n${recent}\n\nThey just said: "${text}"${languageInstruction}\n\nIMPORTANT: React SPECIFICALLY to what they just said. Don't use generic phrases. Vary your response style—mix short and long sentences. Be creative with your word choices. Show your personality. Make each reply feel fresh and unique, like you're genuinely responding in the moment. 1-2 sentences usually, but vary the length. Be yourself—react authentically to what they said.`;
 
     console.log("[/reply] calling LLM with prompt length", prompt.length);
     writeReplyDebug("/reply BEFORE_CALL_OPENAI prompt_len=" + prompt.length);
