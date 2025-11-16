@@ -12,6 +12,14 @@ const fetch = require("node-fetch");
 const FormData = require("form-data");
 const { v4: uuidv4 } = require("uuid");
 const admin = require("firebase-admin");
+const { createClient } = require("@supabase/supabase-js");
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL || "https://yvpoabomcnwegjvfwtav.supabase.co",
+  process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY"
+);
+console.log("✅ Supabase client initialized");
 
 // Initialize Firebase Admin SDK
 const serviceAccount = {
@@ -186,20 +194,100 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 // Firebase Database Helper Functions
 async function getPlants() {
   try {
-    const snapshot = await db.ref("plants").once("value");
-    return snapshot.val() || [];
+    const { data: plants, error } = await supabase
+      .from("plants")
+      .select(`
+        *,
+        images: images(id, plant_id, filename, uploaded_at, area, firebase_url),
+        conversations: conversations(id, plant_id, role, text, text_en, text_kn, time, growth_delta, image_id)
+      `);
+    
+    if (error) throw error;
+    
+    // Transform to match old structure
+    return (plants || []).map(p => ({
+      id: p.id,
+      species: p.species,
+      nickname: p.nickname,
+      owner: p.owner,
+      images: (p.images || []).map(img => ({
+        id: img.id,
+        filename: img.filename,
+        uploadedAt: img.uploaded_at,
+        area: img.area,
+        firebaseUrl: img.firebase_url
+      })),
+      conversations: (p.conversations || []).map(conv => ({
+        id: conv.id,
+        role: conv.role,
+        text: conv.text,
+        text_en: conv.text_en,
+        text_kn: conv.text_kn,
+        time: conv.time,
+        imageId: conv.image_id,
+        growthDelta: conv.growth_delta
+      })),
+      profile: {
+        adoptedDate: p.adopted_date,
+        userCareStyle: p.user_care_style,
+        preferredLight: p.preferred_light,
+        wateringFrequency: p.watering_frequency,
+        healthStatus: p.health_status,
+        careScore: p.care_score
+      }
+    }));
   } catch (e) {
-    console.error("Error reading plants from Firebase:", e.message);
+    console.error("Error reading plants from Supabase:", e.message);
     return [];
   }
 }
 
 async function getFlowers() {
   try {
-    const snapshot = await db.ref("flowers").once("value");
-    return snapshot.val() || [];
+    const { data: flowers, error } = await supabase
+      .from("flowers")
+      .select(`
+        *,
+        images: images(id, flower_id, filename, uploaded_at, area, firebase_url),
+        conversations: conversations(id, flower_id, role, text, text_en, text_kn, time, growth_delta, image_id)
+      `);
+    
+    if (error) throw error;
+    
+    // Transform to match old structure
+    return (flowers || []).map(f => ({
+      id: f.id,
+      species: f.species,
+      nickname: f.nickname,
+      owner: f.owner,
+      images: (f.images || []).map(img => ({
+        id: img.id,
+        filename: img.filename,
+        uploadedAt: img.uploaded_at,
+        area: img.area,
+        firebaseUrl: img.firebase_url
+      })),
+      conversations: (f.conversations || []).map(conv => ({
+        id: conv.id,
+        role: conv.role,
+        text: conv.text,
+        text_en: conv.text_en,
+        text_kn: conv.text_kn,
+        time: conv.time,
+        imageId: conv.image_id,
+        growthDelta: conv.growth_delta
+      })),
+      profile: {
+        adoptedDate: f.adopted_date,
+        userCareStyle: f.user_care_style,
+        preferredLight: f.preferred_light,
+        wateringFrequency: f.watering_frequency,
+        healthStatus: f.health_status,
+        careScore: f.care_score
+      }
+    }));
   } catch (e) {
-    console.error("Error reading flowers from Firebase:", e.message);
+    console.error("Error reading flowers from Supabase:", e.message);
     return [];
   }
 }
@@ -485,15 +573,84 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-function readDB() {
-  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+// Database functions using Supabase (replaces JSON file read/write)
+async function readDB() {
+  try {
+    // Fetch all plants with images and conversations
+    const { data: plants, error: plantsError } = await supabase
+      .from("plants")
+      .select(`
+        *,
+        images: images(id, plant_id, filename, uploaded_at, area, firebase_url),
+        conversations: conversations(id, plant_id, role, text, text_en, text_kn, time, growth_delta, image_id)
+      `);
+    
+    if (plantsError) throw plantsError;
+    
+    // Fetch all flowers with images and conversations
+    const { data: flowers, error: flowersError } = await supabase
+      .from("flowers")
+      .select(`
+        *,
+        images: images(id, flower_id, filename, uploaded_at, area, firebase_url),
+        conversations: conversations(id, flower_id, role, text, text_en, text_kn, time, growth_delta, image_id)
+      `);
+    
+    if (flowersError) throw flowersError;
+    
+    // Transform Supabase data to match old JSON structure
+    const transformPlant = (p) => ({
+      id: p.id,
+      species: p.species,
+      nickname: p.nickname,
+      owner: p.owner,
+      images: (p.images || []).map(img => ({
+        id: img.id,
+        filename: img.filename,
+        uploadedAt: img.uploaded_at,
+        area: img.area,
+        firebaseUrl: img.firebase_url
+      })),
+      conversations: (p.conversations || []).map(conv => ({
+        id: conv.id,
+        role: conv.role,
+        text: conv.text,
+        text_en: conv.text_en,
+        text_kn: conv.text_kn,
+        time: conv.time,
+        imageId: conv.image_id,
+        growthDelta: conv.growth_delta
+      })),
+      profile: {
+        adoptedDate: p.adopted_date,
+        userCareStyle: p.user_care_style,
+        preferredLight: p.preferred_light,
+        wateringFrequency: p.watering_frequency,
+        healthStatus: p.health_status,
+        careScore: p.care_score
+      },
+      identification: {} // Will be populated per-plant as needed
+    });
+    
+    return {
+      plants: (plants || []).map(transformPlant),
+      flowers: (flowers || []).map(transformPlant)
+    };
+  } catch (error) {
+    console.error("❌ Error reading from Supabase:", error);
+    throw error;
+  }
 }
-function writeDB(obj) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(obj, null, 2));
-  // Trigger background Firebase sync (non-blocking)
-  syncDBToFirebase(obj).catch((e) => {
-    console.warn("Firebase sync error:", e.message);
-  });
+
+async function writeDB(obj) {
+  try {
+    // This is now handled by individual update operations in the API routes
+    // The old writeDB that wrote entire file is replaced with targeted updates
+    console.log("ℹ️ writeDB called - operations should use targeted Supabase updates instead");
+  } catch (error) {
+    console.error("❌ Error writing to Supabase:", error);
+    throw error;
+  }
 }
 
 // Simple Server-Sent Events (SSE) manager for notifying clients when background

@@ -9,6 +9,7 @@
     "start:log": "node server.js 2>&1 | tee data/server-run.log"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.81.1",
     "body-parser": "^1.20.2",
     "compression": "^1.7.4",
     "dotenv": "^17.2.1",
