@@ -1421,13 +1421,18 @@ async function callOpenAIChat(messages) {
 
 function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
   const name = nickname || species || "a plant";
+  
+  // More diverse and natural openers - avoid repetitive patterns
   const openerOptions = [
-    `Hey boss — it's ${name} here.`,
-    `Hi — ${name} is here and happy to see you.`,
-    `${name} waves a little leaf — hello.`,
+    `Hey! It's ${name} here.`,
+    `${name} saying hello!`,
+    `I'm ${name} — just wanted to reach out.`,
+    `${name} here, checking in with you.`,
+    `It's me, ${name}!`,
+    `${name}, at your service!`,
+    `Hello from ${name}!`,
   ];
-  const opener =
-    openerOptions[Math.floor(Math.random() * openerOptions.length)];
+  const opener = openerOptions[Math.floor(Math.random() * openerOptions.length)];
 
   // context from lastImage if available
   let area = null;
@@ -1437,56 +1442,76 @@ function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
     if (lastImage.uploadedAt) uploadedAt = lastImage.uploadedAt;
   }
 
-  // translate area/growth into human-friendly hints
+  // More natural context hints based on health
   const hints = [];
   if (area != null) {
-    if (area < 0.02) hints.push("I look a bit dry and could use some water.");
-    else if (area < 0.06)
-      hints.push("I'm doing okay, a little more water would help.");
-    else hints.push("I'm looking lush and green — thank you for caring.");
+    if (area < 0.02) {
+      hints.push("I'm feeling a bit parched, honestly.");
+      hints.push("Could really use some water right about now!");
+      hints.push("My soil's looking pretty dry — help a plant out?");
+    } else if (area < 0.06) {
+      hints.push("I'm doing okay, but a little hydration would be nice.");
+      hints.push("Feeling a bit thirsty if you have a moment.");
+      hints.push("I appreciate the care, though I could use a drink.");
+    } else {
+      hints.push("Feeling healthy and vibrant today!");
+      hints.push("I'm thriving — thank you for the good care!");
+      hints.push("Looking pretty lush right now!");
+      hints.push("I'm really happy with how things are going.");
+    }
   }
+  
+  // Growth feedback
   if (growthDelta != null) {
-    if (growthDelta > 0.05)
-      hints.push(
-        `I've grown about ${Math.round(
-          growthDelta * 100
-        )}% since you last checked on me — I'm flourishing!`
-      );
-    else if (growthDelta < -0.03)
-      hints.push(
-        "I seem a little smaller than before — maybe more water or light would help."
-      );
-    else hints.push("I'm about the same as before — steady and happy.");
+    if (growthDelta > 0.15) {
+      hints.push(`I've grown about ${Math.round(growthDelta * 100)}% — this is awesome!`);
+      hints.push(`Wow, I'm ${Math.round(growthDelta * 100)}% bigger! You're doing great!`);
+    } else if (growthDelta > 0.05) {
+      hints.push(`I've grown ${Math.round(growthDelta * 100)}% since you last saw me.`);
+      hints.push(`You'll notice I'm a bit bigger — about ${Math.round(growthDelta * 100)}% more!`);
+    } else if (growthDelta < -0.1) {
+      hints.push("I seem smaller than before — I might need more light or water.");
+      hints.push("I've shrunk a bit... maybe something needs adjusting?");
+    } else if (growthDelta < -0.03) {
+      hints.push("I'm pretty much the same size — steady as she goes!");
+      hints.push("Not much change from before, but I'm still here and happy!");
+    } else if (growthDelta > 0) {
+      hints.push("I'm about the same, maybe slightly bigger.");
+      hints.push("Staying steady and stable — I like the routine!");
+    } else {
+      hints.push("Can't tell from just this photo, but I'm feeling good!");
+    }
   }
 
-  // if no hints from area/growth, add a warm greeting (no timestamps)
+  // if no hints, add something warm
   if (!hints.length) {
     hints.push("Thanks for checking in on me!");
+    hints.push("Just happy to see you!");
+    hints.push("Nice to have your attention!");
   }
 
-  // care suggestion if things look dry
-  let care = "";
-  if (area != null && area < 0.02)
-    care = " Could you water me a little and check I don't have any pests?";
-
-  // pick one or two hint sentences to keep replies short and natural
+  // pick 1-2 natural-sounding hints
   const pick = [];
   if (hints.length) pick.push(hints[Math.floor(Math.random() * hints.length)]);
-  if (hints.length > 1 && Math.random() > 0.6)
-    pick.push(hints[Math.floor(Math.random() * hints.length)]);
+  if (hints.length > 2 && Math.random() > 0.5) {
+    const remaining = hints.filter(h => h !== pick[0]);
+    if (remaining.length) pick.push(remaining[Math.floor(Math.random() * remaining.length)]);
+  }
 
-  // gentle closing question to invite interaction
+  // Varied closing that invites interaction
   const closers = [
-    "Do you have a minute to give me some water or tell me about my spot?",
-    "Would you like to check my soil or move me to a brighter spot?",
-    "Thanks for stopping by — want to give me a little care?",
+    "How are things on your end?",
+    "What do you think — should I grow more?",
+    "Got any time for a little plant care today?",
+    "Anything you want to adjust for me?",
+    "Want to chat a bit?",
+    "Tell me what you're thinking!",
+    "Any care tips from your side?",
   ];
   const question = closers[Math.floor(Math.random() * closers.length)];
 
-  const body =
-    pick.join(" ") ||
-    "I can't tell how I've changed since this is my first photo, but I love when you visit.";
-  return `${opener} ${body}${care} ${question}`;
+  const body = pick.join(" ") || "Just wanted to say hi!";
+  return `${opener} ${body} ${question}`;
 }
 
 app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
