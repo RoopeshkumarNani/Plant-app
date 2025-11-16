@@ -1729,27 +1729,44 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     
     const db = await readDB();
 
-    // Determine initial collection based on frontend subjectType (user's tab selection)
-    // PlantNet detection happens in background and will move items if needed
-    let subjectCollection = "plants";
-    if (subjectType && (subjectType === "flower" || subjectType === "flowers")) {
-      subjectCollection = "flowers";
-      console.log(`🌸 Using frontend subjectType: flower`);
-    } else {
-      console.log(`🌿 Using frontend subjectType: plant (or default)`);
+    // Try PlantNet detection FIRST (with timeout) to get species and classify immediately
+    // This ensures items go to correct section right away
+    let detectedSpecies = null;
+    let detectedType = null;
+    
+    if ((!species || species === "Unknown") && file.path) {
+      try {
+        console.log(`🔍 Quick PlantNet detection (5s timeout) before creating entry...`);
+        const plantnetResult = await Promise.race([
+          callPlantNet(file.path),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+        ]);
+        
+        if (plantnetResult && plantnetResult.species) {
+          detectedSpecies = plantnetResult.species;
+          detectedType = classifyAsFlowerOrPlant(detectedSpecies);
+          console.log(`✅ Quick detection: "${detectedSpecies}" → ${detectedType}`);
+          species = detectedSpecies; // Update species for entry creation
+        }
+      } catch (err) {
+        console.log(`⏱️  Quick detection timed out or failed, will use frontend tab selection`);
+      }
+    } else if (species && species !== "Unknown") {
+      // User provided species, classify it
+      detectedType = classifyAsFlowerOrPlant(species);
+      console.log(`🔍 User species "${species}" → ${detectedType}`);
     }
     
-    // If user provided species, classify it immediately
-    let detectedType = null;
-    if (species && species !== "Unknown") {
-      detectedType = classifyAsFlowerOrPlant(species);
-      if (detectedType === "flower" && subjectCollection !== "flowers") {
-        subjectCollection = "flowers";
-        console.log(`🌸 User species "${species}" classified as flower, switching collection`);
-      } else if (detectedType === "plant" && subjectCollection !== "plants") {
-        subjectCollection = "plants";
-        console.log(`🌿 User species "${species}" classified as plant, switching collection`);
-      }
+    // Determine collection: use detected type if available, otherwise use frontend tab
+    let subjectCollection = "plants";
+    if (detectedType === "flower") {
+      subjectCollection = "flowers";
+      console.log(`🌸 Using detected type: flower`);
+    } else if (subjectType && (subjectType === "flower" || subjectType === "flowers")) {
+      subjectCollection = "flowers";
+      console.log(`🌸 Using frontend tab: flower`);
+    } else {
+      console.log(`🌿 Using frontend tab: plant (or default)`);
     }
     
     db.plants = db.plants || [];
