@@ -2991,6 +2991,37 @@ app.get("/admin/firebase-status", (req, res) => {
   res.json(status);
 });
 
+// Check upload directory
+app.get("/admin/upload-status", (req, res) => {
+  try {
+    const uploadDirExists = fs.existsSync(UPLOAD_DIR);
+    let files = [];
+    let totalSize = 0;
+    
+    if (uploadDirExists) {
+      files = fs.readdirSync(UPLOAD_DIR).slice(0, 20); // First 20 files
+      files.forEach(f => {
+        const filePath = path.join(UPLOAD_DIR, f);
+        try {
+          totalSize += fs.statSync(filePath).size;
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
+    
+    res.json({
+      uploadDirPath: UPLOAD_DIR,
+      uploadDirExists,
+      fileCount: uploadDirExists ? fs.readdirSync(UPLOAD_DIR).length : 0,
+      sampleFiles: files,
+      totalSize: `${(totalSize / 1024 / 1024).toFixed(2)} MB`,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Test Firebase Storage upload
 app.get("/admin/test-firebase-upload", async (req, res) => {
   try {
