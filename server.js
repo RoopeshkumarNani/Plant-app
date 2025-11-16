@@ -221,100 +221,20 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 // Firebase Database Helper Functions
 async function getPlants() {
   try {
-    const { data: plants, error } = await supabase
-      .from("plants")
-      .select(`
-        *,
-        images: images(id, plant_id, filename, uploaded_at, area, firebase_url),
-        conversations: conversations(id, plant_id, role, text, text_en, text_kn, time, growth_delta, image_id)
-      `);
-    
-    if (error) throw error;
-    
-    // Transform to match old structure
-    return (plants || []).map(p => ({
-      id: p.id,
-      species: p.species,
-      nickname: p.nickname,
-      owner: p.owner,
-      images: (p.images || []).map(img => ({
-        id: img.id,
-        filename: img.filename,
-        uploadedAt: img.uploaded_at,
-        area: img.area,
-        firebaseUrl: img.firebase_url
-      })),
-      conversations: (p.conversations || []).map(conv => ({
-        id: conv.id,
-        role: conv.role,
-        text: conv.text,
-        text_en: conv.text_en,
-        text_kn: conv.text_kn,
-        time: conv.time,
-        imageId: conv.image_id,
-        growthDelta: conv.growth_delta
-      })),
-      profile: {
-        adoptedDate: p.adopted_date,
-        userCareStyle: p.user_care_style,
-        preferredLight: p.preferred_light,
-        wateringFrequency: p.watering_frequency,
-        healthStatus: p.health_status,
-        careScore: p.care_score
-      }
-    }));
+    const db = readDB();
+    return db.plants || [];
   } catch (e) {
-    console.error("Error reading plants from Supabase:", e.message);
+    console.error("Error reading plants:", e.message);
     return [];
   }
 }
 
 async function getFlowers() {
   try {
-    const { data: flowers, error } = await supabase
-      .from("flowers")
-      .select(`
-        *,
-        images: images(id, flower_id, filename, uploaded_at, area, firebase_url),
-        conversations: conversations(id, flower_id, role, text, text_en, text_kn, time, growth_delta, image_id)
-      `);
-    
-    if (error) throw error;
-    
-    // Transform to match old structure
-    return (flowers || []).map(f => ({
-      id: f.id,
-      species: f.species,
-      nickname: f.nickname,
-      owner: f.owner,
-      images: (f.images || []).map(img => ({
-        id: img.id,
-        filename: img.filename,
-        uploadedAt: img.uploaded_at,
-        area: img.area,
-        firebaseUrl: img.firebase_url
-      })),
-      conversations: (f.conversations || []).map(conv => ({
-        id: conv.id,
-        role: conv.role,
-        text: conv.text,
-        text_en: conv.text_en,
-        text_kn: conv.text_kn,
-        time: conv.time,
-        imageId: conv.image_id,
-        growthDelta: conv.growth_delta
-      })),
-      profile: {
-        adoptedDate: f.adopted_date,
-        userCareStyle: f.user_care_style,
-        preferredLight: f.preferred_light,
-        wateringFrequency: f.watering_frequency,
-        healthStatus: f.health_status,
-        careScore: f.care_score
-      }
-    }));
+    const db = readDB();
+    return db.flowers || [];
   } catch (e) {
-    console.error("Error reading flowers from Supabase:", e.message);
+    console.error("Error reading flowers:", e.message);
     return [];
   }
 }
@@ -604,196 +524,30 @@ const upload = multer({ storage });
 // Database functions using Supabase (replaces JSON file read/write)
 async function readDB() {
   try {
-    // Fetch all plants with images and conversations
-    const { data: plants, error: plantsError } = await supabase
-      .from("plants")
-      .select(`
-        *,
-        images: images(id, plant_id, filename, uploaded_at, area, firebase_url),
-        conversations: conversations(id, plant_id, role, text, text_en, text_kn, time, growth_delta, image_id)
-      `);
-    
-    if (plantsError) throw plantsError;
-    
-    // Fetch all flowers with images and conversations
-    const { data: flowers, error: flowersError } = await supabase
-      .from("flowers")
-      .select(`
-        *,
-        images: images(id, flower_id, filename, uploaded_at, area, firebase_url),
-        conversations: conversations(id, flower_id, role, text, text_en, text_kn, time, growth_delta, image_id)
-      `);
-    
-    if (flowersError) throw flowersError;
-    
-    // Transform Supabase data to match old JSON structure
-    const transformPlant = (p) => ({
-      id: p.id,
-      species: p.species,
-      nickname: p.nickname,
-      owner: p.owner,
-      images: (p.images || []).map(img => ({
-        id: img.id,
-        filename: img.filename,
-        uploadedAt: img.uploaded_at,
-        area: img.area,
-        firebaseUrl: img.firebase_url
-      })),
-      conversations: (p.conversations || []).map(conv => ({
-        id: conv.id,
-        role: conv.role,
-        text: conv.text,
-        text_en: conv.text_en,
-        text_kn: conv.text_kn,
-        time: conv.time,
-        imageId: conv.image_id,
-        growthDelta: conv.growth_delta
-      })),
-      profile: {
-        adoptedDate: p.adopted_date,
-        userCareStyle: p.user_care_style,
-        preferredLight: p.preferred_light,
-        wateringFrequency: p.watering_frequency,
-        healthStatus: p.health_status,
-        careScore: p.care_score
-      },
-      identification: {} // Will be populated per-plant as needed
-    });
-    
-    return {
-      plants: (plants || []).map(transformPlant),
-      flowers: (flowers || []).map(transformPlant)
-    };
-  } catch (error) {
-    console.error("❌ Error reading from Supabase:", error);
-    throw error;
+    const dbPath = path.join(__dirname, "data", "db.json");
+    if (!fs.existsSync(dbPath)) {
+      return { plants: [], flowers: [] };
+    }
+    const content = fs.readFileSync(dbPath, "utf-8");
+    return JSON.parse(content);
+  } catch (e) {
+    console.error("Error reading DB from file:", e.message);
+    return { plants: [], flowers: [] };
   }
 }
 
 async function writeDB(obj) {
   try {
-    // For plants
-    if (obj.plants && Array.isArray(obj.plants)) {
-      for (const plant of obj.plants) {
-        // Update or insert plant
-        const { error: upsertError } = await supabase
-          .from("plants")
-          .upsert({
-            id: plant.id,
-            species: plant.species,
-            nickname: plant.nickname,
-            owner: plant.owner || "mother",
-            adopted_date: plant.profile?.adoptedDate,
-            user_care_style: plant.profile?.userCareStyle,
-            preferred_light: plant.profile?.preferredLight,
-            watering_frequency: plant.profile?.wateringFrequency,
-            health_status: plant.profile?.healthStatus || "stable",
-            care_score: plant.profile?.careScore || 50
-          });
-        
-        if (upsertError) console.warn("Error upserting plant:", upsertError);
-        
-        // Handle images
-        if (plant.images && Array.isArray(plant.images)) {
-          for (const img of plant.images) {
-            const { error: imgError } = await supabase
-              .from("images")
-              .upsert({
-                id: img.id,
-                plant_id: plant.id,
-                filename: img.filename,
-                uploaded_at: img.uploadedAt,
-                area: img.area,
-                firebase_url: img.firebaseUrl
-              });
-            if (imgError) console.warn("Error upserting image:", imgError);
-          }
-        }
-        
-        // Handle conversations
-        if (plant.conversations && Array.isArray(plant.conversations)) {
-          for (const conv of plant.conversations) {
-            const { error: convError } = await supabase
-              .from("conversations")
-              .upsert({
-                id: conv.id,
-                plant_id: plant.id,
-                image_id: conv.imageId,
-                role: conv.role,
-                text: conv.text,
-                text_en: conv.text_en,
-                text_kn: conv.text_kn,
-                time: conv.time,
-                growth_delta: conv.growthDelta
-              });
-            if (convError) console.warn("Error upserting conversation:", convError);
-          }
-        }
-      }
+    const dbPath = path.join(__dirname, "data", "db.json");
+    const dataDir = path.dirname(dbPath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
-    
-    // For flowers
-    if (obj.flowers && Array.isArray(obj.flowers)) {
-      for (const flower of obj.flowers) {
-        // Update or insert flower
-        const { error: upsertError } = await supabase
-          .from("flowers")
-          .upsert({
-            id: flower.id,
-            species: flower.species,
-            nickname: flower.nickname,
-            owner: flower.owner || "mother",
-            adopted_date: flower.profile?.adoptedDate,
-            user_care_style: flower.profile?.userCareStyle,
-            preferred_light: flower.profile?.preferredLight,
-            watering_frequency: flower.profile?.wateringFrequency,
-            health_status: flower.profile?.healthStatus || "stable",
-            care_score: flower.profile?.careScore || 50
-          });
-        
-        if (upsertError) console.warn("Error upserting flower:", upsertError);
-        
-        // Handle images
-        if (flower.images && Array.isArray(flower.images)) {
-          for (const img of flower.images) {
-            const { error: imgError } = await supabase
-              .from("images")
-              .upsert({
-                id: img.id,
-                flower_id: flower.id,
-                filename: img.filename,
-                uploaded_at: img.uploadedAt,
-                area: img.area,
-                firebase_url: img.firebaseUrl
-              });
-            if (imgError) console.warn("Error upserting image:", imgError);
-          }
-        }
-        
-        // Handle conversations
-        if (flower.conversations && Array.isArray(flower.conversations)) {
-          for (const conv of flower.conversations) {
-            const { error: convError } = await supabase
-              .from("conversations")
-              .upsert({
-                id: conv.id,
-                flower_id: flower.id,
-                image_id: conv.imageId,
-                role: conv.role,
-                text: conv.text,
-                text_en: conv.text_en,
-                text_kn: conv.text_kn,
-                time: conv.time,
-                growth_delta: conv.growthDelta
-              });
-            if (convError) console.warn("Error upserting conversation:", convError);
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error writing to Supabase:", error);
-    throw error;
+    fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
+    console.log("✅ Database saved");
+  } catch (e) {
+    console.error("Error writing DB:", e.message);
+    throw e;
   }
 }
 
