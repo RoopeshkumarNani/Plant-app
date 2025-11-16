@@ -264,16 +264,27 @@ async function getPlantWithRelations(id, type = 'plant') {
       .order('uploaded_at', { ascending: true });
     
     // Transform Supabase images to match frontend format
-    const transformedImages = (images || []).map(img => ({
-      id: img.id,
-      filename: img.filename,
-      uploadedAt: img.uploaded_at || img.uploadedAt,
-      area: img.area,
-      // Map supabase_url to both url (for new system) and firebaseUrl (for legacy compatibility)
-      url: img.supabase_url || img.url,
-      firebaseUrl: img.supabase_url || img.firebase_url || img.firebaseUrl || 
-        `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${img.filename}`
-    }));
+    const transformedImages = (images || []).map(img => {
+      // Ensure we always have a valid URL - prioritize Supabase Storage URL
+      const supabaseUrl = img.supabase_url || img.supabaseUrl;
+      const fallbackUrl = img.url || img.firebaseUrl || img.firebase_url;
+      const localUrl = `https://plant-app-backend-h28h.onrender.com/uploads/${img.filename}`;
+      
+      // Use Supabase URL if available, otherwise fallback to other URLs, finally use local URL
+      const imageUrl = supabaseUrl || fallbackUrl || localUrl;
+      
+      console.log(`🖼️  Transforming image ${img.id}: supabase_url=${supabaseUrl ? '✅' : '❌'}, fallback=${fallbackUrl ? '✅' : '❌'}, final=${imageUrl ? '✅' : '❌'}`);
+      
+      return {
+        id: img.id,
+        filename: img.filename,
+        uploadedAt: img.uploaded_at || img.uploadedAt,
+        area: img.area,
+        // Map supabase_url to both url (for new system) and firebaseUrl (for legacy compatibility)
+        url: imageUrl,
+        firebaseUrl: imageUrl // Use same URL for both fields
+      };
+    });
     
     // Get conversations
     const { data: conversations } = await supabase
