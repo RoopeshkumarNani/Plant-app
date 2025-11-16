@@ -391,7 +391,7 @@ async function deleteFlowerImage(flowerId, imageId) {
 
 // Sync function: Write local data to Firebase in background
 async function syncDBToFirebase(dbData) {
-  if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
+  if (!db || !process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
     return; // Firebase not configured, skip
   }
   try {
