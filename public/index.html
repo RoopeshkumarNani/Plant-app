@@ -4828,7 +4828,9 @@
 
                             // Use explicit subject type if available to pick correct endpoint deterministically
                             const kind = plant._type === 'flower' ? 'flowers' : 'plants';
-                            const url = `/${kind}/${plant.id}/images/${img.id}`;
+                            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : '';
+                            const url = baseUrl + `/${kind}/${plant.id}/images/${img.id}`;
+                            console.log('DELETE request URL:', url);
                             const r = await fetch(url, delOpts);
                             
                             // Try to parse as JSON first, fallback to text
