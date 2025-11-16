@@ -117,8 +117,7 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
     console.log(`   Bucket object:`, { name: bucket.name });
     
     try {
-      // For string paths, use bucket.upload() with the file directly (most reliable)
-      // For buffers, write to temp file first then upload
+      // For string paths, verify file exists
       let uploadPath = filePathOrBuffer;
       let tempFile = null;
       
@@ -130,11 +129,18 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
         console.log(`   Buffer written to temp file: ${tempFile}`);
       }
       
+      // Verify file exists before upload
+      if (!fs.existsSync(uploadPath)) {
+        throw new Error(`Upload file does not exist: ${uploadPath}`);
+      }
+      console.log(`   File exists, size: ${fs.statSync(uploadPath).size} bytes`);
       console.log(`   Uploading file from: ${uploadPath}`);
       
-      // Use bucket.upload() - the native Firebase method
-      const [uploadedFile] = await bucket.upload(uploadPath, {
-        destination: destinationPath,
+      // Try simpler direct upload using the file object
+      const file = bucket.file(destinationPath);
+      
+      // Upload using the saveAs method on the file
+      await file.save(fs.readFileSync(uploadPath), {
         metadata: {
           cacheControl: "public, max-age=31536000",
           contentType: "image/jpeg",
@@ -1641,14 +1647,21 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log("🔄 Background processing started for image:", imgEntry.id);
         console.log("   Firebase bucket status - initialized?", !!bucket, "bucket.name:", bucket?.name || "N/A");
         
-        // Upload to Firebase Storage in background
+        // Upload to Firebase Storage in background (optional - if it fails, continue anyway)
         console.log("📤 Background: Attempting Firebase Storage upload...");
-        const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
-        // Use buffer if available (preferred), otherwise fall back to file path
-        const uploadSource = fileBuffer || file.path;
-        const uploadSourceType = fileBuffer ? "buffer" : "file.path";
-        console.log(`   Upload source: ${uploadSourceType} (${fileBuffer ? fileBuffer.length : "N/A"} bytes)`);
-        const firebaseUrl = await uploadFileToFirebaseStorage(uploadSource, firebaseUploadPath);
+        let firebaseUrl = null;
+        try {
+          const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
+          // Use buffer if available (preferred), otherwise fall back to file path
+          const uploadSource = fileBuffer || file.path;
+          const uploadSourceType = fileBuffer ? "buffer" : "file.path";
+          console.log(`   Upload source: ${uploadSourceType} (${fileBuffer ? fileBuffer.length : "N/A"} bytes)`);
+          firebaseUrl = await uploadFileToFirebaseStorage(uploadSource, firebaseUploadPath);
+        } catch (fbError) {
+          console.warn("⚠️  Firebase upload error (non-blocking):", fbError.message);
+          // Continue anyway - Firebase backup is optional
+        }
+        
         if (firebaseUrl) {
           console.log("✅ Background: Firebase URL obtained:", firebaseUrl);
           imgEntry.firebaseUrl = firebaseUrl;
@@ -1671,7 +1684,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
             console.warn("❌ Background: Could not find plant in DB:", plant.id);
           }
         } else {
-          console.warn("⚠️  Background: Firebase upload returned null - image will not have firebaseUrl");
+          console.warn("⚠️  Background: Firebase upload unavailable - image will be served from local storage");
           console.warn("   Checking if this is a permission issue or other error...");
           // Log bucket details for debugging
           if (bucket) {
