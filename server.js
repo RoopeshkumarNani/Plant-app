@@ -1580,12 +1580,12 @@ async function callOpenAIForMessage(prompt, language = "en") {
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
           ],
-          max_tokens: 200,
-          // Encourage more natural, varied replies
-          temperature: 0.7,
-          top_p: 0.9,
-          frequency_penalty: 0.2,
-          presence_penalty: 0.3,
+          max_tokens: 150,
+          // Higher temperature for more natural, friend-like responses
+          temperature: 0.85,
+          top_p: 0.95,
+          frequency_penalty: 0.3,
+          presence_penalty: 0.4,
         }),
       }),
       9000
