@@ -521,15 +521,22 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Database functions using Supabase (replaces JSON file read/write)
+// Database functions - use /app/data on Render, or ./data locally
 async function readDB() {
   try {
-    const dbPath = path.join(__dirname, "data", "db.json");
+    // Use /app/data on production (Render), ./data locally
+    const dbPath = process.env.NODE_ENV === 'production' 
+      ? "/app/data/db.json"
+      : path.join(__dirname, "data", "db.json");
+    
     if (!fs.existsSync(dbPath)) {
+      console.log("DB file not found at", dbPath, "- returning empty");
       return { plants: [], flowers: [] };
     }
     const content = fs.readFileSync(dbPath, "utf-8");
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    console.log("✅ DB read:", Object.keys(parsed));
+    return parsed;
   } catch (e) {
     console.error("Error reading DB from file:", e.message);
     return { plants: [], flowers: [] };
@@ -538,13 +545,17 @@ async function readDB() {
 
 async function writeDB(obj) {
   try {
-    const dbPath = path.join(__dirname, "data", "db.json");
+    // Use /app/data on production (Render), ./data locally
+    const dbPath = process.env.NODE_ENV === 'production'
+      ? "/app/data/db.json"
+      : path.join(__dirname, "data", "db.json");
+    
     const dataDir = path.dirname(dbPath);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
-    console.log("✅ Database saved");
+    console.log("✅ Database saved to", dbPath);
   } catch (e) {
     console.error("Error writing DB:", e.message);
     throw e;
