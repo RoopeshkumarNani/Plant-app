@@ -3217,7 +3217,7 @@ app.delete("/plants/:id/images/:imgId", (req, res) => {
 });
 
 // Delete an image for a flower (mirror the plants route)
-app.delete("/flowers/:id/images/:imgId", (req, res) => {
+app.delete("/flowers/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /flowers/:id/images/:imgId", { id, imgId });
