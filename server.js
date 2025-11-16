@@ -856,9 +856,36 @@ function computeCareScore(plant) {
 }
 
 // Helper: extract care facts from conversation and update profile
+async function saveCareHistoryToSupabase(plantId, action, date, notes = "", isFlower = false) {
+  try {
+    const subjectIdField = isFlower ? "flower_id" : "plant_id";
+    const { error } = await supabase
+      .from('care_history')
+      .insert({
+        id: uuidv4(),
+        [subjectIdField]: plantId,
+        action: action,
+        date: date,
+        notes: notes || ""
+      });
+    
+    if (error) {
+      console.error(`❌ Error saving care history to Supabase:`, error.message);
+    } else {
+      console.log(`✅ Saved care history to Supabase: ${action} for ${isFlower ? 'flower' : 'plant'} ${plantId}`);
+    }
+  } catch (e) {
+    console.error(`⚠️  Supabase care history save failed (non-blocking):`, e.message);
+  }
+}
+
 function updateProfileFromConversation(plant, newMessage) {
   const profile = ensureProfile(plant);
   const text = String(newMessage.text || "").toLowerCase();
+  
+  // Determine if this is a flower or plant
+  const db = readDB();
+  const isFlower = db.flowers && db.flowers.some(f => f.id === plant.id);
 
   // Detect care actions - expanded keyword patterns for better detection
   if (
@@ -868,29 +895,38 @@ function updateProfileFromConversation(plant, newMessage) {
   ) {
     profile.lastWatered = new Date().toISOString();
     if (!profile.careHistory) profile.careHistory = [];
-    profile.careHistory.push({
+    const careEntry = {
       date: new Date().toISOString(),
       action: "watered",
       notes: "",
-    });
+    };
+    profile.careHistory.push(careEntry);
+    // Save to Supabase (async, non-blocking)
+    saveCareHistoryToSupabase(plant.id, "watered", careEntry.date, careEntry.notes, isFlower);
   }
   if (/fertil|fertiliz|food|nutrient|compost|boost|feed/.test(text)) {
     profile.lastFertilized = new Date().toISOString();
     if (!profile.careHistory) profile.careHistory = [];
-    profile.careHistory.push({
+    const careEntry = {
       date: new Date().toISOString(),
       action: "fertilized",
       notes: "",
-    });
+    };
+    profile.careHistory.push(careEntry);
+    // Save to Supabase (async, non-blocking)
+    saveCareHistoryToSupabase(plant.id, "fertilized", careEntry.date, careEntry.notes, isFlower);
   }
   if (/repot|repotted|pot|soil|transplant|new.*pot|bigger.*pot/.test(text)) {
     profile.lastRepotted = new Date().toISOString();
     if (!profile.careHistory) profile.careHistory = [];
-    profile.careHistory.push({
+    const careEntry = {
       date: new Date().toISOString(),
       action: "repotted",
       notes: "",
-    });
+    };
+    profile.careHistory.push(careEntry);
+    // Save to Supabase (async, non-blocking)
+    saveCareHistoryToSupabase(plant.id, "repotted", careEntry.date, careEntry.notes, isFlower);
   }
 
   // Detect care style
@@ -2546,6 +2582,34 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     };
     plant.conversations.push(userEntry);
     writeDB(db);
+    
+    // Save user message to Supabase
+    try {
+      const db = readDB();
+      const isFlower = db.flowers && db.flowers.some(f => f.id === plant.id);
+      const subjectIdField = isFlower ? "flower_id" : "plant_id";
+      
+      const { error: userConvError } = await supabase
+        .from('conversations')
+        .insert({
+          id: userEntry.id,
+          [subjectIdField]: plant.id,
+          image_id: userEntry.imageId || null,
+          role: 'user',
+          text: userEntry.text,
+          time: userEntry.time,
+          growth_delta: null
+        });
+      
+      if (userConvError) {
+        console.error("❌ Error saving user conversation to Supabase:", userConvError.message);
+      } else {
+        console.log("✅ Saved user conversation to Supabase:", userEntry.id);
+      }
+    } catch (supabaseErr) {
+      console.error("⚠️  Supabase conversation save failed (non-blocking):", supabaseErr.message);
+    }
+    
     writeReplyDebug(
       "/reply SAVED_USER_MSG conv_len=" +
         (plant.conversations && plant.conversations.length)
@@ -3026,7 +3090,38 @@ app.delete("/plants/:id/images/:imgId", (req, res) => {
       filename: img.filename,
       imgId: img.id,
     });
-    // remove file if exists
+    
+    // Delete from Supabase first
+    try {
+      // Delete image from Supabase
+      const { error: imgError } = await supabase
+        .from('images')
+        .delete()
+        .eq('id', imgId)
+        .eq('plant_id', id);
+      
+      if (imgError) {
+        console.error("❌ Error deleting image from Supabase:", imgError.message);
+      } else {
+        console.log("✅ Deleted image from Supabase:", imgId);
+      }
+      
+      // Delete related conversations
+      const { error: convError } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('image_id', imgId);
+      
+      if (convError) {
+        console.error("❌ Error deleting conversations from Supabase:", convError.message);
+      } else {
+        console.log("✅ Deleted conversations from Supabase for image:", imgId);
+      }
+    } catch (supabaseErr) {
+      console.error("⚠️  Supabase delete failed (non-blocking):", supabaseErr.message);
+    }
+    
+    // Remove file if exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
       console.log("[DELETE] attempting unlink", full);
@@ -3035,14 +3130,33 @@ app.delete("/plants/:id/images/:imgId", (req, res) => {
     } catch (e) {
       console.warn("Failed to remove image file", e && e.message);
     }
-    // remove from array
+    
+    // Remove from local DB array
     plant.images.splice(imgIdx, 1);
-    // if plant has no images left, remove the plant entirely
+    
+    // If plant has no images left, remove the plant entirely
     if (!plant.images || plant.images.length === 0) {
       const pIdx = db.plants.findIndex((pp) => pp.id === plant.id);
       if (pIdx !== -1) db.plants.splice(pIdx, 1);
+      
+      // Also delete from Supabase
+      try {
+        const { error: plantError } = await supabase
+          .from('plants')
+          .delete()
+          .eq('id', id);
+        
+        if (plantError) {
+          console.error("❌ Error deleting plant from Supabase:", plantError.message);
+        } else {
+          console.log("✅ Deleted plant from Supabase (no images left):", id);
+        }
+      } catch (supabaseErr) {
+        console.error("⚠️  Supabase plant delete failed:", supabaseErr.message);
+      }
     }
-    // persist
+    
+    // Persist local DB
     writeDB(db);
     return res.json({ success: true, plant });
   } catch (e) {
@@ -3068,6 +3182,38 @@ app.delete("/flowers/:id/images/:imgId", (req, res) => {
       filename: img.filename,
       imgId: img.id,
     });
+    
+    // Delete from Supabase first
+    try {
+      // Delete image from Supabase
+      const { error: imgError } = await supabase
+        .from('images')
+        .delete()
+        .eq('id', imgId)
+        .eq('flower_id', id);
+      
+      if (imgError) {
+        console.error("❌ Error deleting image from Supabase:", imgError.message);
+      } else {
+        console.log("✅ Deleted image from Supabase:", imgId);
+      }
+      
+      // Delete related conversations
+      const { error: convError } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('image_id', imgId);
+      
+      if (convError) {
+        console.error("❌ Error deleting conversations from Supabase:", convError.message);
+      } else {
+        console.log("✅ Deleted conversations from Supabase for image:", imgId);
+      }
+    } catch (supabaseErr) {
+      console.error("⚠️  Supabase delete failed (non-blocking):", supabaseErr.message);
+    }
+    
+    // Remove file if exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
       console.log("[DELETE] attempting unlink", full);
@@ -3076,11 +3222,33 @@ app.delete("/flowers/:id/images/:imgId", (req, res) => {
     } catch (e) {
       console.warn("Failed to remove image file", e && e.message);
     }
+    
+    // Remove from local DB array
     flower.images.splice(imgIdx, 1);
+    
+    // If flower has no images left, remove the flower entirely
     if (!flower.images || flower.images.length === 0) {
       const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
       if (pIdx !== -1) db.flowers.splice(pIdx, 1);
+      
+      // Also delete from Supabase
+      try {
+        const { error: flowerError } = await supabase
+          .from('flowers')
+          .delete()
+          .eq('id', id);
+        
+        if (flowerError) {
+          console.error("❌ Error deleting flower from Supabase:", flowerError.message);
+        } else {
+          console.log("✅ Deleted flower from Supabase (no images left):", id);
+        }
+      } catch (supabaseErr) {
+        console.error("⚠️  Supabase flower delete failed:", supabaseErr.message);
+      }
     }
+    
+    // Persist local DB
     writeDB(db);
     return res.json({ success: true, flower });
   } catch (e) {
