@@ -2825,6 +2825,7 @@
                     if (imageUrl) {
                         img.dataset.src = imageUrl;
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/></svg>';
+                        img.onerror = () => handleImageError(img);
                     } else {
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
                     }
@@ -3430,7 +3431,8 @@
                     p.images.forEach(img => {
                         const el = document.createElement('div'); el.className = 'msg';
                         // Render image without exposed uploadedAt metadata (keeps data in DB but not shown)
-                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${getImageUrl(img)}?t=${Date.now()}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo'></div>`;
+                        const imgUrl = getImageUrl(img) + '?t=' + Date.now();
+                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${imgUrl}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo' onerror='this.style.opacity="0.3"; this.alt="Image not found";'></div>`;
                         msgs.appendChild(el);
                         try {
                             const imgEl = el.querySelector('img[data-imgid]');
@@ -3582,7 +3584,11 @@
             const empty = msgs.querySelector('.empty'); if (empty) empty.remove();
             const el = document.createElement('div'); el.className = 'msg' + (role === 'user' ? ' user' : '');
             let html = '';
-            if (imageObjOrFilename) html += `<div style='margin-bottom:8px'><img data-fn='${typeof imageObjOrFilename === 'string' ? imageObjOrFilename : imageObjOrFilename.filename}' src='${getImageUrl(imageObjOrFilename)}' style='max-width:220px; border-radius:8px'></div>`;
+            if (imageObjOrFilename) {
+                const imgUrl = getImageUrl(imageObjOrFilename);
+                const filename = typeof imageObjOrFilename === 'string' ? imageObjOrFilename : imageObjOrFilename.filename;
+                html += `<div style='margin-bottom:8px'><img data-fn='${filename}' src='${imgUrl}' style='max-width:220px; border-radius:8px' onerror='this.style.opacity="0.3"; this.alt="Image not found";'></div>`;
+            }
             // Store growth data for internal use but don't display any technical info
             html += `<div>${text}${imageId ? ' 📷' : ''}</div>`;
             el.innerHTML = html;
