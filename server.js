@@ -539,12 +539,11 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// Optimize image serving: compress and cache
+// Optimize image serving: cache and set proper headers
 app.use("/uploads", (req, res, next) => {
   // Set cache headers for images (1 month)
   res.set({
-    "Cache-Control": "public, max-age=2592000, immutable",
-    "Content-Encoding": "gzip",
+    "Cache-Control": "public, max-age=2592000, immutable"
   });
   next();
 }, express.static(UPLOAD_DIR, {
