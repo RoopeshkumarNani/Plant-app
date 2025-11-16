@@ -3299,8 +3299,9 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
         if (pIdx !== -1) db.plants.splice(pIdx, 1);
       }
     }
-      
-      // Also delete from Supabase
+    
+    // If plant has no images left, also delete from Supabase
+    if (!plant.images || plant.images.length === 0) {
       try {
         const { error: plantError } = await supabase
           .from('plants')
@@ -3413,8 +3414,9 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
         if (pIdx !== -1) db.flowers.splice(pIdx, 1);
       }
     }
-      
-      // Also delete from Supabase
+    
+    // If flower has no images left, also delete from Supabase
+    if (!flower.images || flower.images.length === 0) {
       try {
         const { error: flowerError } = await supabase
           .from('flowers')
