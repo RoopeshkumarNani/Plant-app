@@ -3126,7 +3126,7 @@ app.post("/reply-fast", requireToken, express.json(), (req, res) => {
 
 // Delete an image for a plant (remove DB entry and file)
 // Tokenless by default for single-recipient installs
-app.delete("/plants/:id/images/:imgId", (req, res) => {
+app.delete("/plants/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /plants/:id/images/:imgId", { id, imgId });
