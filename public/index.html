@@ -4019,15 +4019,48 @@
                 // show progress UI
                 progressBarFill.style.width = '0%'; progressText.textContent = '0%'; progressWrapper.style.display = 'flex';
                 try {
-                    const res = await doUploadWithProgress(fd, authH);
+                    let res = await doUploadWithProgress(fd, authH);
+                    
+                    // Handle 401 - retry with token if provided
                     if (!res.ok && res.status === 401) {
                         const token = prompt('Server requires an invite token. Enter it now (you can store it in the browser):');
-                        if (token) { INVITE_TOKEN = token; localStorage.setItem('inviteToken', token); authH['x-invite-token'] = token; }
+                        if (token) {
+                            INVITE_TOKEN = token;
+                            localStorage.setItem('inviteToken', token);
+                            authH['x-invite-token'] = token;
+                            // Retry upload with token
+                            res = await doUploadWithProgress(fd, authH);
+                        } else {
+                            if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
+                            uploading = false;
+                            progressWrapper.style.display = 'none';
+                            return alert('Upload cancelled - invite token required');
+                        }
                     }
+                    
+                    // Check if request failed
+                    if (!res.ok) {
+                        let errorMsg = 'Upload failed';
+                        try {
+                            const errorText = await res.text();
+                            const errorData = JSON.parse(errorText);
+                            errorMsg = errorData.error || errorData.message || errorText || 'Unknown error';
+                        } catch (e) {
+                            errorMsg = `Upload failed: HTTP ${res.status}`;
+                        }
+                        if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
+                        uploading = false;
+                        progressWrapper.style.display = 'none';
+                        return alert(errorMsg);
+                    }
+                    
                     const data = await res.json();
                     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
                     uploading = false;
-                    if (!data.success) return alert('Upload failed: ' + (data.error || 'unknown'));
+                    if (!data.success) {
+                        progressWrapper.style.display = 'none';
+                        return alert('Upload failed: ' + (data.error || 'unknown'));
+                    }
                     // UI updates (same as previous flow)
                     const subjType = data.subjectType || 'plant';
                     const subjObj = data[subjType] || data.plant || data.flower || null;
