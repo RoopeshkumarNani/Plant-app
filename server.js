@@ -79,6 +79,33 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   if (!process.env.FIREBASE_CLIENT_EMAIL) console.warn("  - FIREBASE_CLIENT_EMAIL not set");
 }
 
+// Function to upload file to Supabase Storage
+async function uploadFileToSupabaseStorage(fileBuffer, filename) {
+  try {
+    console.log(`📤 Uploading to Supabase Storage: ${filename}`);
+    
+    const { data, error } = await supabase.storage
+      .from("images")
+      .upload(filename, fileBuffer, {
+        contentType: "image/jpeg",
+        upsert: false
+      });
+    
+    if (error) throw error;
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from("images")
+      .getPublicUrl(filename);
+    
+    console.log("✅ Image uploaded to Supabase Storage:", publicUrl);
+    return publicUrl;
+  } catch (error) {
+    console.error("❌ Supabase Storage upload error:", error);
+    return null;
+  }
+}
+
 // Function to upload file to Firebase Storage
 // Can accept either a file path string OR file data (path will be read into buffer)
 async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
@@ -1977,43 +2004,32 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log("   Firebase bucket status - initialized?", !!bucket, "bucket.name:", bucket?.name || "N/A");
         
         // Upload to Firebase Storage in background (optional - if it fails, continue anyway)
-        console.log("📤 Background: Attempting Firebase Storage upload...");
-        let firebaseUrl = null;
+        console.log("📤 Background: Attempting Supabase Storage upload...");
+        let supabaseUrl = null;
         try {
-          const firebaseUploadPath = `uploads/${plant.id}/${imgEntry.id}/${imgEntry.filename}`;
-          // Use buffer if available (preferred), otherwise fall back to file path
-          const uploadSource = fileBuffer || file.path;
-          const uploadSourceType = fileBuffer ? "buffer" : "file.path";
-          console.log(`   Upload source: ${uploadSourceType} (${fileBuffer ? fileBuffer.length : "N/A"} bytes)`);
-          firebaseUrl = await uploadFileToFirebaseStorage(uploadSource, firebaseUploadPath);
-        } catch (fbError) {
-          console.warn("⚠️  Firebase upload error (non-blocking):", fbError.message);
-          // Continue anyway - Firebase backup is optional
-        }
-        
-        if (firebaseUrl) {
-          console.log("✅ Background: Firebase URL obtained:", firebaseUrl);
-          imgEntry.firebaseUrl = firebaseUrl;
-          console.log("✅ Background: Setting firebaseUrl in memory:", firebaseUrl);
-          // Update the database with the Firebase URL
-          const dbKey = subjectCollection === "flowers" ? "flowers" : "plants";
-          const freshDb = readDB();
-          const plantRef = freshDb[dbKey].find((p) => p.id === plant.id);
-          if (plantRef) {
-            const imgRef = plantRef.images.find((i) => i.id === imgEntry.id);
-            if (imgRef) {
-              imgRef.firebaseUrl = firebaseUrl;
-              console.log("✅ Background: Writing firebaseUrl to database");
-              writeDB(freshDb);
-              console.log("✅ Background: Database updated with firebaseUrl");
+          // Upload to Supabase Storage
+          supabaseUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
+          
+          if (supabaseUrl) {
+            console.log("✅ Background: Supabase URL obtained:", supabaseUrl);
+            imgEntry.firebaseUrl = supabaseUrl;
+            console.log("✅ Background: Setting firebaseUrl to Supabase URL");
+            
+            // Update the database with the Supabase URL
+            const { error: updateError } = await supabase
+              .from("images")
+              .update({ firebase_url: supabaseUrl })
+              .eq("id", imgEntry.id);
+            
+            if (updateError) {
+              console.warn("⚠️  Error updating image URL in database:", updateError);
             } else {
-              console.warn("❌ Background: Could not find image in plant:", imgEntry.id);
+              console.log("✅ Background: Database updated with Supabase URL");
             }
-          } else {
-            console.warn("❌ Background: Could not find plant in DB:", plant.id);
           }
-        } else {
-          console.warn("⚠️  Background: Firebase upload unavailable - image will be served from local storage");
+        } catch (supabaseError) {
+          console.warn("⚠️  Supabase upload error (non-blocking):", supabaseError.message);
+        }
           console.warn("   Checking if this is a permission issue or other error...");
           // Log bucket details for debugging
           if (bucket) {
