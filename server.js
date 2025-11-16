@@ -2913,9 +2913,14 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
       );
     }
 
-    // If response is in English, also generate Kannada version
+    // Handle language-specific responses
     let plantReplyKannada = null;
-    if (lang === "en" && plantReply) {
+    if (lang === "kn" && plantReply) {
+      // Response should already be in Kannada (from system prompt + language instruction)
+      plantReplyKannada = plantReply;
+      console.log("[/reply] Response is in Kannada:", plantReplyKannada);
+    } else if (lang === "en" && plantReply) {
+      // If response is in English, also generate Kannada version for reference
       try {
         console.log("[/reply] Generating Kannada translation...");
         const transRes = await axios.post(
@@ -2992,9 +2997,9 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     const plantEntry = {
       id: uuidv4(),
       role: "plant",
-      text: plantReply,
-      text_en: plantReplyEnglish || (lang === "en" ? plantReply : null),
-      text_kn: plantReplyKannada || (lang === "kn" ? plantReply : null),
+      text: plantReply, // Main reply (in the language user selected)
+      text_en: lang === "en" ? plantReply : (plantReplyEnglish || null), // English version
+      text_kn: lang === "kn" ? plantReply : (plantReplyKannada || null), // Kannada version
       time: new Date().toISOString(),
       imageId: lastImage ? lastImage.id : null,
       growthDelta: typeof growthDelta === "number" ? growthDelta : null,
