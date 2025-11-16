@@ -4421,7 +4421,12 @@
                 hist[hist.length - 1].text_en = text_en;
                 hist[hist.length - 1].text_kn = text_kn;
                 appendMessageEl('plant', plantReply, rt, imageFilename, imageId, growthDelta, text_en, text_kn);
-                speak(plantReply);
+                // Use language-specific text for speaking
+                const textToSpeak = (currentLanguage === 'kn' && text_kn) ? text_kn : 
+                                   (currentLanguage === 'en' && text_en) ? text_en : 
+                                   plantReply;
+                console.log('🔊 Speaking text (language:', currentLanguage, '):', textToSpeak.substring(0, 50));
+                speak(textToSpeak);
             } catch (err) {
                 console.error('Reply failed', err);
                 const plantReply = generateClientReply(currentPlant, text);

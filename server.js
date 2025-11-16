@@ -2847,9 +2847,9 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
       ? "If the user is asking about species, answer directly with the recorded species and any identification confidence. Keep it short and do not include meta commentary."
       : "";
 
-    // Add language-specific instruction
+    // Add language-specific instruction - STRONGER for Kannada
     const languageInstruction = lang === "kn" 
-      ? "\n\nCRITICAL: The user is chatting in Kannada (ಕನ್ನಡ). You MUST reply ONLY in Kannada. Use natural, colloquial Kannada that a native Kannada speaker would use in everyday conversation. Use authentic Kannada expressions and tone. Be warm and friendly in Kannada."
+      ? "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT ⚠️\n\nThe user is chatting in Kannada (ಕನ್ನಡ). You MUST reply ONLY in Kannada. DO NOT reply in English. DO NOT mix languages. Use ONLY Kannada characters and words. Use natural, colloquial Kannada that a native Kannada speaker would use in everyday conversation. Use authentic Kannada expressions and tone. Be warm and friendly in Kannada. If you reply in English, you have failed this instruction."
       : "\n\nReply naturally in English.";
     
     const prompt = `${speciesLine}\n${speciesInstruction}\nYou're ${
