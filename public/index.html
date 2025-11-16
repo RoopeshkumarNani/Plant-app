@@ -4128,14 +4128,18 @@
                             if (tabPlants) tabPlants.classList.add('active');
                             if (tabFlowers) tabFlowers.classList.remove('active');
                             loadPlants();
-                            filterAll.textContent = 'All Plants';
+                            if (filterAll) filterAll.textContent = 'All Plants';
                         }
                     }
                     // Do not speak the placeholder message automatically on upload.
+                    // Hide progress bar on success
+                    progressWrapper.style.display = 'none';
                 } catch (err) {
-                    console.error('Upload failed', err); alert('Upload failed: ' + (err && err.message));
+                    console.error('Upload failed', err);
                     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
                     uploading = false;
+                    progressWrapper.style.display = 'none';
+                    alert('Upload failed: ' + (err && err.message || 'Network error. Please check your connection and try again.'));
                 } finally {
                     progressWrapper.style.display = 'none';
                 }
