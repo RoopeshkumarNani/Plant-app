@@ -285,20 +285,20 @@ async function updateFlower(id, updates) {
 
 async function getPlantById(id) {
   try {
-    const snapshot = await db.ref(`plants/${id}`).once("value");
-    return snapshot.val();
+    const db = await readDB();
+    return (db.plants || []).find(p => p.id === id) || null;
   } catch (e) {
-    console.error("Error reading plant from Firebase:", e.message);
+    console.error("Error reading plant:", e.message);
     return null;
   }
 }
 
 async function getFlowerById(id) {
   try {
-    const snapshot = await db.ref(`flowers/${id}`).once("value");
-    return snapshot.val();
+    const db = await readDB();
+    return (db.flowers || []).find(f => f.id === id) || null;
   } catch (e) {
-    console.error("Error reading flower from Firebase:", e.message);
+    console.error("Error reading flower:", e.message);
     return null;
   }
 }
@@ -1653,7 +1653,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     } else {
       // When subjectType is provided, only match/create inside that collection.
       // If no subjectType provided, default to plants (legacy behavior).
-      const requestedType = subjectType === "flower" ? "flowers" : "plants";
+      const requestedType = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
       db[requestedType] = db[requestedType] || [];
 
       // try to match existing subject inside the requested collection by nickname or species
