@@ -132,17 +132,28 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
           public: true,
         });
         
+        // Handle stream errors
         stream.on('error', (err) => {
           console.error("❌ Stream error:", err.message);
+          console.error("   Error code:", err.code);
+          console.error("   Full error:", err);
           reject(err);
         });
         
+        // Handle completion
         stream.on('finish', () => {
           console.log("✅ File stream finished successfully");
           resolve();
         });
         
-        stream.end(fileBuffer);
+        // Handle premature close
+        stream.on('close', () => {
+          console.log("📌 Stream closed event fired");
+        });
+        
+        // Write the data
+        stream.write(fileBuffer);
+        stream.end();
       });
       
       console.log("✅ File uploaded to Firebase Storage successfully");
