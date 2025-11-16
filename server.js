@@ -1874,7 +1874,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     // Fast-path: create minimal image entry and placeholder message, persist quickly
     let subjectCollection = "plants";
-    if (subjectType && subjectType === "flower") subjectCollection = "flowers";
+    if (subjectType && (subjectType === "flower" || subjectType === "flowers")) subjectCollection = "flowers";
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
 

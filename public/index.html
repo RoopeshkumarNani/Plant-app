@@ -3489,13 +3489,14 @@
                             try {
                                 const filename = del.getAttribute('data-fn');
                                 const imgId = del.getAttribute('data-img');
+                                const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : '';
                                 // Try plants delete first, if 404 then try flowers delete
-                                let url = `/plants/${p.id}/images/${imgId}`;
+                                let url = baseUrl + `/plants/${p.id}/images/${imgId}`;
                                 console.log('DELETE request URL:', url);
                                 let r = await fetch(url, { method: 'DELETE' });
                                 if (!r.ok && r.status === 404) {
                                     // try flowers
-                                    url = `/flowers/${p.id}/images/${imgId}`;
+                                    url = baseUrl + `/flowers/${p.id}/images/${imgId}`;
                                     console.log('Fallback DELETE request URL:', url);
                                     r = await fetch(url, { method: 'DELETE' });
                                 }
@@ -3985,8 +3986,8 @@
                 fd.append('photo', toSend);
                 fd.append('nickname', nickname);
                 if (owner) fd.append('owner', owner);
-
-                // Don't send subjectType - server will auto-detect if it's a flower or plant based on species
+                // Send subjectType based on which tab is active (plants or flowers)
+                fd.append('subjectType', activeTab);
                 // prepare headers
                 const authH = getAuthHeaders();
                 // show progress UI
@@ -4441,12 +4442,13 @@
                         try {
                             const plantId = del.getAttribute('data-plant');
                             const imgId = del.getAttribute('data-img');
+                            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : '';
                             // try plants delete first, fall back to flowers
-                            let url = `/plants/${plantId}/images/${imgId}`;
+                            let url = baseUrl + `/plants/${plantId}/images/${imgId}`;
                             console.log('DELETE request URL:', url);
                             let r = await fetch(url, { method: 'DELETE' });
                             if (!r.ok && r.status === 404) {
-                                url = `/flowers/${plantId}/images/${imgId}`;
+                                url = baseUrl + `/flowers/${plantId}/images/${imgId}`;
                                 console.log('Fallback DELETE request URL:', url);
                                 r = await fetch(url, { method: 'DELETE' });
                             }
