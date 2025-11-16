@@ -87,15 +87,29 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   if (!process.env.FIREBASE_CLIENT_EMAIL) console.warn("  - FIREBASE_CLIENT_EMAIL not set");
 }
 
-// Function to upload file to Supabase Storage
+// Function to upload file to Supabase Storage with compression
 async function uploadFileToSupabaseStorage(fileBuffer, filename) {
   try {
-    console.log(`📤 Uploading to Supabase Storage: ${filename}`);
+    console.log(`📤 Compressing and uploading to Supabase Storage: ${filename}`);
+    
+    // Compress image using sharp (WebP, 80% quality, max 1920px width)
+    const compressedBuffer = await sharp(fileBuffer)
+      .resize(1920, null, {
+        withoutEnlargement: true,
+        fit: 'inside'
+      })
+      .webp({ quality: 80 })
+      .toBuffer();
+    
+    console.log(`✅ Image compressed: ${fileBuffer.length} → ${compressedBuffer.length} bytes`);
+    
+    // Change extension to .webp
+    const webpFilename = filename.replace(/\.(jpg|jpeg|png)$/i, '.webp');
     
     const { data, error } = await supabase.storage
       .from("images")
-      .upload(filename, fileBuffer, {
-        contentType: "image/jpeg",
+      .upload(webpFilename, compressedBuffer, {
+        contentType: "image/webp",
         upsert: false
       });
     
@@ -104,7 +118,7 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
     // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from("images")
-      .getPublicUrl(filename);
+      .getPublicUrl(webpFilename);
     
     console.log("✅ Image uploaded to Supabase Storage:", publicUrl);
     return publicUrl;
