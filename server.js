@@ -1718,18 +1718,44 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     
     const { species, nickname, plantId, subjectType, subjectId, owner } =
       req.body;
+    
+    // Validate owner is required
+    if (!owner || owner.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Owner is required. Please select whose plant/flower this is.',
+      });
+    }
+    
     const db = await readDB();
 
     // Fast-path: create minimal image entry and placeholder message, persist quickly
+    // First, try to detect if it's a plant or flower based on species (if provided)
+    let detectedType = null;
+    if (species && species !== "Unknown") {
+      detectedType = classifyAsFlowerOrPlant(species);
+      console.log(`🔍 Initial classification: species="${species}" → ${detectedType}`);
+    }
+    
+    // Determine subjectCollection: use detected type if available, otherwise use subjectType from frontend
     let subjectCollection = "plants";
-    if (subjectType && (subjectType === "flower" || subjectType === "flowers")) subjectCollection = "flowers";
+    if (detectedType === "flower") {
+      subjectCollection = "flowers";
+      console.log(`🌸 Using detected type: flower`);
+    } else if (subjectType && (subjectType === "flower" || subjectType === "flowers")) {
+      subjectCollection = "flowers";
+      console.log(`🌸 Using frontend subjectType: flower`);
+    } else {
+      console.log(`🌿 Defaulting to: plant`);
+    }
+    
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
 
     // resolve or create subject (minimal fields). We only compute heavy analysis in background.
     let plant = null;
     if (subjectType && subjectId) {
-      if (subjectType === "flower") subjectCollection = "flowers";
+      // If specific subject ID provided, use the subjectCollection we determined
       db[subjectCollection] = db[subjectCollection] || [];
       plant = db[subjectCollection].find((p) => p.id === subjectId);
       if (!plant)
@@ -1738,28 +1764,51 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           error: `${subjectCollection.slice(0, -1)} not found for provided id`,
         });
     } else if (plantId) {
+      // Legacy: plantId means search in plants collection
       plant = db.plants.find((p) => p.id === plantId);
       if (!plant)
         return res.status(404).json({
           success: false,
           error: "Plant not found for provided plantId",
         });
+      // If found in plants but should be in flowers, we'll move it later
     } else {
-      // When subjectType is provided, only match/create inside that collection.
-      // If no subjectType provided, default to plants (legacy behavior).
-      const requestedType = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
-      db[requestedType] = db[requestedType] || [];
+      // Search in the determined collection (subjectCollection)
+      db[subjectCollection] = db[subjectCollection] || [];
 
-      // try to match existing subject inside the requested collection by nickname or species
+      // try to match existing subject inside the determined collection by nickname or species
       if (nickname)
-        plant = db[requestedType].find(
+        plant = db[subjectCollection].find(
           (p) =>
-            p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase()
+            p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase() && 
+            (p.owner || null) === owner // Also match by owner
         );
       if (!plant && species)
-        plant = db[requestedType].find(
-          (p) => p.species && p.species.toLowerCase() === species.toLowerCase()
+        plant = db[subjectCollection].find(
+          (p) => p.species && p.species.toLowerCase() === species.toLowerCase() &&
+            (p.owner || null) === owner // Also match by owner
         );
+      
+      // If not found in determined collection, also check the other collection (in case it was mis-categorized)
+      if (!plant) {
+        const otherCollection = subjectCollection === "plants" ? "flowers" : "plants";
+        db[otherCollection] = db[otherCollection] || [];
+        if (nickname)
+          plant = db[otherCollection].find(
+            (p) =>
+              p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase() &&
+              (p.owner || null) === owner
+          );
+        if (!plant && species)
+          plant = db[otherCollection].find(
+            (p) => p.species && p.species.toLowerCase() === species.toLowerCase() &&
+              (p.owner || null) === owner
+          );
+        // If found in other collection, we'll move it to correct one
+        if (plant) {
+          console.log(`🔄 Found ${otherCollection.slice(0, -1)} in wrong collection, will move to ${subjectCollection}`);
+        }
+      }
 
       if (!plant) {
         plant = {
@@ -1768,12 +1817,31 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           nickname: nickname || "",
           images: [],
           conversations: [],
+          owner: owner, // Always set owner (already validated above)
         };
-        if (owner) plant.owner = owner;
-        db[requestedType].push(plant);
-        subjectCollection = requestedType;
+        // Use the detected collection (which may differ from requestedType)
+        db[subjectCollection].push(plant);
+        console.log(`✅ Created new ${subjectCollection.slice(0, -1)} with owner: ${owner}`);
       } else {
-        subjectCollection = requestedType;
+        // Update owner if it changed
+        if (owner && plant.owner !== owner) {
+          plant.owner = owner;
+          console.log(`✅ Updated owner to: ${owner}`);
+        }
+        // If plant exists but is in wrong collection, move it
+        const currentCollection = db.plants.includes(plant) ? "plants" : "flowers";
+        if (currentCollection !== subjectCollection) {
+          console.log(`🔄 Moving ${currentCollection.slice(0, -1)} to ${subjectCollection.slice(0, -1)} collection`);
+          const removeFrom = currentCollection === "plants" ? db.plants : db.flowers;
+          const addTo = subjectCollection === "plants" ? db.plants : db.flowers;
+          const idx = removeFrom.findIndex(p => p.id === plant.id);
+          if (idx >= 0) {
+            removeFrom.splice(idx, 1);
+            if (!addTo.includes(plant)) {
+              addTo.push(plant);
+            }
+          }
+        }
       }
     }
 
