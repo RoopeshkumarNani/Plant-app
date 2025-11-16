@@ -644,9 +644,125 @@ async function readDB() {
 
 async function writeDB(obj) {
   try {
-    // This is now handled by individual update operations in the API routes
-    // The old writeDB that wrote entire file is replaced with targeted updates
-    console.log("ℹ️ writeDB called - operations should use targeted Supabase updates instead");
+    // For plants
+    if (obj.plants && Array.isArray(obj.plants)) {
+      for (const plant of obj.plants) {
+        // Update or insert plant
+        const { error: upsertError } = await supabase
+          .from("plants")
+          .upsert({
+            id: plant.id,
+            species: plant.species,
+            nickname: plant.nickname,
+            owner: plant.owner || "mother",
+            adopted_date: plant.profile?.adoptedDate,
+            user_care_style: plant.profile?.userCareStyle,
+            preferred_light: plant.profile?.preferredLight,
+            watering_frequency: plant.profile?.wateringFrequency,
+            health_status: plant.profile?.healthStatus || "stable",
+            care_score: plant.profile?.careScore || 50
+          });
+        
+        if (upsertError) console.warn("Error upserting plant:", upsertError);
+        
+        // Handle images
+        if (plant.images && Array.isArray(plant.images)) {
+          for (const img of plant.images) {
+            const { error: imgError } = await supabase
+              .from("images")
+              .upsert({
+                id: img.id,
+                plant_id: plant.id,
+                filename: img.filename,
+                uploaded_at: img.uploadedAt,
+                area: img.area,
+                firebase_url: img.firebaseUrl
+              });
+            if (imgError) console.warn("Error upserting image:", imgError);
+          }
+        }
+        
+        // Handle conversations
+        if (plant.conversations && Array.isArray(plant.conversations)) {
+          for (const conv of plant.conversations) {
+            const { error: convError } = await supabase
+              .from("conversations")
+              .upsert({
+                id: conv.id,
+                plant_id: plant.id,
+                image_id: conv.imageId,
+                role: conv.role,
+                text: conv.text,
+                text_en: conv.text_en,
+                text_kn: conv.text_kn,
+                time: conv.time,
+                growth_delta: conv.growthDelta
+              });
+            if (convError) console.warn("Error upserting conversation:", convError);
+          }
+        }
+      }
+    }
+    
+    // For flowers
+    if (obj.flowers && Array.isArray(obj.flowers)) {
+      for (const flower of obj.flowers) {
+        // Update or insert flower
+        const { error: upsertError } = await supabase
+          .from("flowers")
+          .upsert({
+            id: flower.id,
+            species: flower.species,
+            nickname: flower.nickname,
+            owner: flower.owner || "mother",
+            adopted_date: flower.profile?.adoptedDate,
+            user_care_style: flower.profile?.userCareStyle,
+            preferred_light: flower.profile?.preferredLight,
+            watering_frequency: flower.profile?.wateringFrequency,
+            health_status: flower.profile?.healthStatus || "stable",
+            care_score: flower.profile?.careScore || 50
+          });
+        
+        if (upsertError) console.warn("Error upserting flower:", upsertError);
+        
+        // Handle images
+        if (flower.images && Array.isArray(flower.images)) {
+          for (const img of flower.images) {
+            const { error: imgError } = await supabase
+              .from("images")
+              .upsert({
+                id: img.id,
+                flower_id: flower.id,
+                filename: img.filename,
+                uploaded_at: img.uploadedAt,
+                area: img.area,
+                firebase_url: img.firebaseUrl
+              });
+            if (imgError) console.warn("Error upserting image:", imgError);
+          }
+        }
+        
+        // Handle conversations
+        if (flower.conversations && Array.isArray(flower.conversations)) {
+          for (const conv of flower.conversations) {
+            const { error: convError } = await supabase
+              .from("conversations")
+              .upsert({
+                id: conv.id,
+                flower_id: flower.id,
+                image_id: conv.imageId,
+                role: conv.role,
+                text: conv.text,
+                text_en: conv.text_en,
+                text_kn: conv.text_kn,
+                time: conv.time,
+                growth_delta: conv.growthDelta
+              });
+            if (convError) console.warn("Error upserting conversation:", convError);
+          }
+        }
+      }
+    }
   } catch (error) {
     console.error("❌ Error writing to Supabase:", error);
     throw error;
