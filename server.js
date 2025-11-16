@@ -3702,11 +3702,15 @@ app.get("/flowers/:id", async (req, res) => {
 // Flowers endpoints (lightweight parity with plants)
 app.get("/flowers", async (req, res) => {
   try {
+    console.log("🌺 GET /flowers called", { owner: req.query.owner });
     const owner = req.query.owner;
     const flowers = await getFlowers(owner);
-    res.json(Array.isArray(flowers) ? flowers : Object.values(flowers || {}));
+    console.log(`✅ Returning ${Array.isArray(flowers) ? flowers.length : 'non-array'} flowers`);
+    const result = Array.isArray(flowers) ? flowers : Object.values(flowers || {});
+    res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error("❌ Error in GET /flowers:", e);
+    res.status(500).json({ error: e.message, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined });
   }
 });
 

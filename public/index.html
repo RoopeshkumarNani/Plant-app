@@ -2909,9 +2909,25 @@
         // Flowers loader re-uses the same rendering as plants but fetches /flowers
         async function loadFlowers() {
             try {
+                console.log('🌺 Loading flowers...');
                 const res = await fetchWithFallback('/flowers');
+                
+                if (!res.ok) {
+                    console.error('❌ Failed to load flowers:', res.status, res.statusText);
+                    const errorText = await res.text().catch(() => 'Unknown error');
+                    console.error('Error details:', errorText);
+                    const container = document.getElementById('plants');
+                    if (container) container.innerHTML = '<div class="small">Error loading flowers. Please refresh the page.</div>';
+                    return;
+                }
+                
                 const data = await res.json();
+                console.log('✅ Loaded flowers:', Array.isArray(data) ? data.length : 'not an array', data);
                 const container = document.getElementById('plants');
+                if (!container) {
+                    console.error('❌ Container #plants not found');
+                    return;
+                }
                 container.innerHTML = '';
 
                 // Update filter label when loading flowers
@@ -2920,7 +2936,9 @@
                     filterAll.textContent = 'All Flowers';
                 }
 
-                let visible = (data || []).filter(p => p.images && p.images.length > 0);
+                // Handle both array and object responses
+                const flowersArray = Array.isArray(data) ? data : (data.flowers || []);
+                let visible = (flowersArray || []).filter(p => p.images && p.images.length > 0);
 
                 // Apply owner filter
                 if (currentOwnerFilter !== 'all') {
