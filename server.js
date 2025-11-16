@@ -11,396 +11,445 @@ const sharp = require("sharp");
 const fetch = require("node-fetch");
 const FormData = require("form-data");
 const { v4: uuidv4 } = require("uuid");
-const admin = require("firebase-admin");
 const { createClient } = require("@supabase/supabase-js");
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL || "https://yvpoabomcnwegjvfwtav.supabase.co",
-  process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY"
-);
-console.log("✅ Supabase client initialized");
+// Use service role key for server-side operations (bypasses RLS)
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://yvpoabomcnwegjvfwtav.supabase.co";
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY";
 
-// Initialize Firebase Admin SDK
-const serviceAccount = {
-  type: "service_account",
-  project_id: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
-  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY
-    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
-    : undefined,
-  client_email: process.env.FIREBASE_CLIENT_EMAIL,
-  client_id: process.env.FIREBASE_CLIENT_ID,
-  auth_uri: "https://accounts.google.com/o/oauth2/auth",
-  token_uri: "https://oauth2.googleapis.com/token",
-  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-};
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+console.log("✅ Supabase client initialized (using service role key for server operations)");
 
-// Only initialize if we have the required credentials
-if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${
-      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
-    }-default-rtdb.firebaseio.com`,
-  });
-  console.log(
-    "✅ Firebase Admin SDK initialized with URL:",
-    `https://${
-      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
-    }-default-rtdb.firebaseio.com`
-  );
-} else {
-  console.warn(
-    "⚠️  Firebase credentials not found. Using fallback local storage."
-  );
-}
-
-// Reference to Firebase Realtime Database
-let db = null;
-if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-  try {
-    db = admin.database();
-    console.log("✅ Firebase Realtime Database initialized");
-  } catch (e) {
-    console.error("⚠️  Firebase Database initialization failed:", e.message);
-    console.error("Stack:", e.stack);
-    db = null;
-  }
-} else {
-  console.warn("⚠️  Firebase credentials not found - Database will use local storage only");
-}
-
-// Reference to Firebase Storage Bucket
-let bucket = null;
-if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-  try {
-    const bucketName = `${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.appspot.com`;
-    console.log(`🔧 Attempting to initialize Firebase Storage bucket: ${bucketName}`);
-    bucket = admin.storage().bucket(bucketName);
-    console.log("✅ Firebase Storage bucket initialized");
-    console.log("📍 Bucket name:", bucket.name);
-  } catch (e) {
-    console.error("⚠️  Firebase Storage initialization failed:", e.message);
-    console.error("Stack:", e.stack);
-    bucket = null;
-  }
-} else {
-  console.warn("⚠️  Firebase credentials incomplete - Storage uploads disabled");
-  if (!process.env.FIREBASE_PRIVATE_KEY) console.warn("  - FIREBASE_PRIVATE_KEY not set");
-  if (!process.env.FIREBASE_CLIENT_EMAIL) console.warn("  - FIREBASE_CLIENT_EMAIL not set");
-}
-
-// Function to upload file to Supabase Storage
+// Function to compress and upload image to Supabase Storage
+// Target: ~90KB per image to fit 11,000+ images in 1GB free tier
 async function uploadFileToSupabaseStorage(fileBuffer, filename) {
   try {
-    console.log(`📤 Uploading to Supabase Storage: ${filename}`);
+    console.log(`📤 Compressing and uploading to Supabase Storage: ${filename}`);
     
+    // Compress image using Sharp
+    // Target: max 1920px width, WebP format, 80% quality
+    const compressedBuffer = await sharp(fileBuffer)
+      .resize(1920, null, { 
+        withoutEnlargement: true,
+        fit: 'inside'
+      })
+      .webp({ quality: 80 })
+      .toBuffer();
+    
+    const originalSize = fileBuffer.length;
+    const compressedSize = compressedBuffer.length;
+    const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+    
+    console.log(`   Original: ${(originalSize / 1024).toFixed(1)}KB → Compressed: ${(compressedSize / 1024).toFixed(1)}KB (${compressionRatio}% reduction)`);
+    
+    // Generate unique filename with .webp extension
+    const webpFilename = filename.replace(/\.(jpg|jpeg|png|gif)$/i, '.webp');
+    const storagePath = `images/${webpFilename}`;
+    
+    // Upload to Supabase Storage
     const { data, error } = await supabase.storage
       .from("images")
-      .upload(filename, fileBuffer, {
-        contentType: "image/jpeg",
-        upsert: false
+      .upload(storagePath, compressedBuffer, {
+        contentType: "image/webp",
+        upsert: false,
+        cacheControl: "public, max-age=31536000"
       });
     
-    if (error) throw error;
+    if (error) {
+      // If file exists, try with timestamp
+      if (error.message.includes('already exists')) {
+        const timestampedFilename = `${Date.now()}-${webpFilename}`;
+        const { data: retryData, error: retryError } = await supabase.storage
+          .from("images")
+          .upload(`images/${timestampedFilename}`, compressedBuffer, {
+            contentType: "image/webp",
+            upsert: false,
+            cacheControl: "public, max-age=31536000"
+          });
+        
+        if (retryError) throw retryError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from("images")
+          .getPublicUrl(`images/${timestampedFilename}`);
+        
+        console.log("✅ Image uploaded to Supabase Storage:", publicUrl);
+        return { url: publicUrl, path: `images/${timestampedFilename}`, size: compressedSize };
+      }
+      throw error;
+    }
     
     // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from("images")
-      .getPublicUrl(filename);
+      .getPublicUrl(storagePath);
     
     console.log("✅ Image uploaded to Supabase Storage:", publicUrl);
-    return publicUrl;
+    return { url: publicUrl, path: storagePath, size: compressedSize };
   } catch (error) {
     console.error("❌ Supabase Storage upload error:", error);
     return null;
   }
 }
 
-// Function to upload file to Firebase Storage
-// Can accept either a file path string OR file data (path will be read into buffer)
-async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
-  if (!bucket) {
-    console.error("❌ Firebase Storage not available - bucket is null");
-    console.error("   This means Firebase credentials were not properly initialized");
-    return null;
-  }
+// Supabase Database Helper Functions
+async function getPlants(owner = null) {
   try {
-    let fileBuffer;
-    let fileSourceDesc = "";
-    
-    // Handle both file paths and buffers
-    if (typeof filePathOrBuffer === "string") {
-      const localFilePath = filePathOrBuffer;
-      console.log(`📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`);
-      
-      // Verify file exists
-      if (!fs.existsSync(localFilePath)) {
-        console.error(`❌ Local file does not exist: ${localFilePath}`);
-        console.error(`   Current working directory: ${process.cwd()}`);
-        console.error(`   UPLOAD_DIR: ${UPLOAD_DIR}`);
-        try {
-          console.error(`   Contents of ${UPLOAD_DIR}:`, fs.readdirSync(UPLOAD_DIR).slice(0, 5));
-        } catch (e) {
-          console.error(`   Could not list ${UPLOAD_DIR}:`, e.message);
-        }
-        return null;
-      }
-      const stats = fs.statSync(localFilePath);
-      console.log(`✅ Local file exists, size: ${stats.size} bytes`);
-      fileBuffer = fs.readFileSync(localFilePath);
-      fileSourceDesc = `file:${localFilePath}`;
-    } else if (Buffer.isBuffer(filePathOrBuffer)) {
-      fileBuffer = filePathOrBuffer;
-      fileSourceDesc = "buffer";
-      console.log(`📤 Starting Firebase upload from buffer (size: ${fileBuffer.length} bytes) → ${destinationPath}`);
-    } else {
-      console.error(`❌ Invalid file input: expected string or Buffer, got ${typeof filePathOrBuffer}`);
-      return null;
+    let query = supabase.from('plants').select('*');
+    if (owner && owner !== 'all') {
+      query = query.eq('owner', owner);
     }
-
-    // Upload with explicit error handling
-    console.log(`   Uploading ${fileSourceDesc} to Firebase...`);
-    console.log(`   Bucket object:`, { name: bucket.name });
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
     
-    try {
-      // For string paths, verify file exists
-      let uploadPath = filePathOrBuffer;
-      let tempFile = null;
-      
-      if (typeof filePathOrBuffer !== "string") {
-        // Buffer case: write to temp file first
-        tempFile = path.join(UPLOAD_DIR, `temp-${Date.now()}.jpg`);
-        fs.writeFileSync(tempFile, filePathOrBuffer);
-        uploadPath = tempFile;
-        console.log(`   Buffer written to temp file: ${tempFile}`);
-      }
-      
-      // Verify file exists before upload
-      if (!fs.existsSync(uploadPath)) {
-        throw new Error(`Upload file does not exist: ${uploadPath}`);
-      }
-      console.log(`   File exists, size: ${fs.statSync(uploadPath).size} bytes`);
-      console.log(`   Uploading file from: ${uploadPath}`);
-      
-      // Try simpler direct upload using the file object
-      const file = bucket.file(destinationPath);
-      
-      // Upload using the saveAs method on the file
-      await file.save(fs.readFileSync(uploadPath), {
-        metadata: {
-          cacheControl: "public, max-age=31536000",
-          contentType: "image/jpeg",
-        },
-        public: true,
-      });
-      
-      console.log("✅ File uploaded to Firebase Storage successfully");
-      
-      // Clean up temp file if we created one
-      if (tempFile) {
-        try {
-          fs.unlinkSync(tempFile);
-          console.log("   Temp file cleaned up");
-        } catch (e) {
-          console.warn("   Could not delete temp file:", e.message);
-        }
-      }
-      
-      // Return public URL
-      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
-      console.log("✅ Firebase Storage URL generated:", publicUrl);
-      return publicUrl;
-    } catch (fileError) {
-      console.error("❌ Firebase upload error:");
-      console.error("   Message:", fileError.message);
-      console.error("   Code:", fileError.code);
-      if (fileError.errors) console.error("   Details:", fileError.errors);
-      console.error("   Full error:", fileError);
-      throw fileError;
-    }
+    // Transform to match existing structure
+    const plants = await Promise.all((data || []).map(async (plant) => {
+      return await getPlantWithRelations(plant.id, 'plant');
+    }));
+    return plants;
   } catch (e) {
-    console.error("❌ Error uploading to Firebase Storage:");
-    console.error("   Message:", e.message);
-    console.error("   Code:", e.code);
-    console.error("   Full error:", JSON.stringify(e, null, 2));
-    console.error("   Stack:", e.stack);
-    return null;
-  }
-}
-
-// Firebase Database Helper Functions
-async function getPlants() {
-  try {
-    const db = await readDB();
-    return db.plants || [];
-  } catch (e) {
-    console.error("Error reading plants:", e.message);
+    console.error("Error reading plants from Supabase:", e.message);
     return [];
   }
 }
 
-async function getFlowers() {
+async function getFlowers(owner = null) {
   try {
-    const db = await readDB();
-    return db.flowers || [];
+    let query = supabase.from('flowers').select('*');
+    if (owner && owner !== 'all') {
+      query = query.eq('owner', owner);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+    
+    // Transform to match existing structure
+    const flowers = await Promise.all((data || []).map(async (flower) => {
+      return await getPlantWithRelations(flower.id, 'flower');
+    }));
+    return flowers;
   } catch (e) {
-    console.error("Error reading flowers:", e.message);
+    console.error("Error reading flowers from Supabase:", e.message);
     return [];
   }
 }
 
-async function addPlant(plant) {
+// Get plant/flower with all relations (images, conversations, profile)
+async function getPlantWithRelations(id, type = 'plant') {
+  const table = type === 'plant' ? 'plants' : 'flowers';
+  const idField = type === 'plant' ? 'plant_id' : 'flower_id';
+  
   try {
-    if (db) {
-      const plantRef = db.ref("plants").push();
-      plant.id = plantRef.key;
-      plant.id_backup = plantRef.key;
-      await plantRef.set(plant);
-    } else {
-      // Fallback: generate ID locally if Firebase not available
-      if (!plant.id) {
-        plant.id = require("uuid").v4();
-        plant.id_backup = plant.id;
-      }
-    }
-    return plant;
+    // Get main record
+    const { data: mainData, error: mainError } = await supabase
+      .from(table)
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (mainError || !mainData) return null;
+    
+    // Get images
+    const { data: images } = await supabase
+      .from('images')
+      .select('*')
+      .eq(idField, id)
+      .order('uploaded_at', { ascending: true });
+    
+    // Get conversations
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq(idField, id)
+      .order('time', { ascending: true });
+    
+    // Get care history
+    const { data: careHistory } = await supabase
+      .from('care_history')
+      .select('*')
+      .eq(idField, id)
+      .order('date', { ascending: false });
+    
+    // Build profile from main data
+    const profile = {
+      adoptedDate: mainData.adopted_date,
+      healthStatus: mainData.health_status || 'stable',
+      careScore: mainData.care_score || 50,
+      userCareStyle: mainData.user_care_style,
+      preferredLight: mainData.preferred_light,
+      lastWatered: careHistory?.find(c => c.action === 'watered')?.date || null,
+      lastFertilized: careHistory?.find(c => c.action === 'fertilized')?.date || null,
+      lastRepotted: careHistory?.find(c => c.action === 'repotted')?.date || null,
+      careHistory: (careHistory || []).map(c => ({
+        date: c.date,
+        action: c.action,
+        notes: c.notes || ''
+      }))
+    };
+    
+    // Transform to match existing structure
+    return {
+      id: mainData.id,
+      species: mainData.species,
+      nickname: mainData.nickname,
+      owner: mainData.owner,
+      images: (images || []).map(img => ({
+        id: img.id,
+        filename: img.filename,
+        uploadedAt: img.uploaded_at,
+        area: img.area,
+        supabaseUrl: img.supabase_url,
+        firebaseUrl: img.supabase_url, // For backward compatibility
+        fileSize: img.file_size,
+        width: img.width,
+        height: img.height
+      })),
+      conversations: (conversations || []).map(conv => ({
+        id: conv.id,
+        role: conv.role,
+        text: conv.text,
+        text_en: conv.text_en,
+        text_kn: conv.text_kn,
+        time: conv.time,
+        imageId: conv.image_id,
+        growthDelta: conv.growth_delta
+      })),
+      profile
+    };
   } catch (e) {
-    console.error("Error adding plant to Firebase:", e.message);
-    // Fallback: generate ID locally if Firebase fails
-    if (!plant.id) {
-      plant.id = require("uuid").v4();
-      plant.id_backup = plant.id;
-    }
-    return plant;
+    console.error(`Error getting ${type} with relations:`, e.message);
+    return null;
   }
 }
 
-async function addFlower(flower) {
+async function getPlantById(id) {
+  return await getPlantWithRelations(id, 'plant');
+}
+
+async function getFlowerById(id) {
+  return await getPlantWithRelations(id, 'flower');
+}
+
+async function addPlant(plantData) {
   try {
-    if (db) {
-      const flowerRef = db.ref("flowers").push();
-      flower.id = flowerRef.key;
-      flower.id_backup = flowerRef.key;
-      await flowerRef.set(flower);
-    } else {
-      // Fallback: generate ID locally if Firebase not available
-      if (!flower.id) {
-        flower.id = require("uuid").v4();
-        flower.id_backup = flower.id;
-      }
-    }
-    return flower;
+    const plantId = plantData.id || uuidv4();
+    
+    const { data, error } = await supabase
+      .from('plants')
+      .insert({
+        id: plantId,
+        species: plantData.species,
+        nickname: plantData.nickname,
+        owner: plantData.owner || 'mother',
+        adopted_date: plantData.profile?.adoptedDate || new Date().toISOString(),
+        health_status: plantData.profile?.healthStatus || 'stable',
+        care_score: plantData.profile?.careScore || 50,
+        user_care_style: plantData.profile?.userCareStyle,
+        preferred_light: plantData.profile?.preferredLight
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return await getPlantWithRelations(plantId, 'plant');
   } catch (e) {
-    console.error("Error adding flower to Firebase:", e.message);
-    // Fallback: generate ID locally if Firebase fails
-    if (!flower.id) {
-      flower.id = require("uuid").v4();
-      flower.id_backup = flower.id;
-    }
-    return flower;
+    console.error("Error adding plant to Supabase:", e.message);
+    throw e;
+  }
+}
+
+async function addFlower(flowerData) {
+  try {
+    const flowerId = flowerData.id || uuidv4();
+    
+    const { data, error } = await supabase
+      .from('flowers')
+      .insert({
+        id: flowerId,
+        species: flowerData.species,
+        nickname: flowerData.nickname,
+        owner: flowerData.owner || 'mother',
+        adopted_date: flowerData.profile?.adoptedDate || new Date().toISOString(),
+        health_status: flowerData.profile?.healthStatus || 'stable',
+        care_score: flowerData.profile?.careScore || 50,
+        user_care_style: flowerData.profile?.userCareStyle,
+        preferred_light: flowerData.profile?.preferredLight
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return await getPlantWithRelations(flowerId, 'flower');
+  } catch (e) {
+    console.error("Error adding flower to Supabase:", e.message);
+    throw e;
   }
 }
 
 async function updatePlant(id, updates) {
   try {
-    if (db) {
-      await db.ref(`plants/${id}`).update(updates);
+    const updateData = {};
+    if (updates.species !== undefined) updateData.species = updates.species;
+    if (updates.nickname !== undefined) updateData.nickname = updates.nickname;
+    if (updates.owner !== undefined) updateData.owner = updates.owner;
+    if (updates.profile) {
+      if (updates.profile.healthStatus) updateData.health_status = updates.profile.healthStatus;
+      if (updates.profile.careScore !== undefined) updateData.care_score = updates.profile.careScore;
+      if (updates.profile.userCareStyle) updateData.user_care_style = updates.profile.userCareStyle;
+      if (updates.profile.preferredLight) updateData.preferred_light = updates.profile.preferredLight;
+      if (updates.profile.adoptedDate) updateData.adopted_date = updates.profile.adoptedDate;
     }
-    // If Firebase not available, updates will be handled by local db.json writes
+    
+    const { error } = await supabase
+      .from('plants')
+      .update(updateData)
+      .eq('id', id);
+    
+    if (error) throw error;
   } catch (e) {
-    console.error("Error updating plant in Firebase:", e.message);
-    // Non-blocking: continue with local storage
+    console.error("Error updating plant in Supabase:", e.message);
+    throw e;
   }
 }
 
 async function updateFlower(id, updates) {
   try {
-    if (db) {
-      await db.ref(`flowers/${id}`).update(updates);
+    const updateData = {};
+    if (updates.species !== undefined) updateData.species = updates.species;
+    if (updates.nickname !== undefined) updateData.nickname = updates.nickname;
+    if (updates.owner !== undefined) updateData.owner = updates.owner;
+    if (updates.profile) {
+      if (updates.profile.healthStatus) updateData.health_status = updates.profile.healthStatus;
+      if (updates.profile.careScore !== undefined) updateData.care_score = updates.profile.careScore;
+      if (updates.profile.userCareStyle) updateData.user_care_style = updates.profile.userCareStyle;
+      if (updates.profile.preferredLight) updateData.preferred_light = updates.profile.preferredLight;
+      if (updates.profile.adoptedDate) updateData.adopted_date = updates.profile.adoptedDate;
     }
-    // If Firebase not available, updates will be handled by local db.json writes
+    
+    const { error } = await supabase
+      .from('flowers')
+      .update(updateData)
+      .eq('id', id);
+    
+    if (error) throw error;
   } catch (e) {
-    console.error("Error updating flower in Firebase:", e.message);
-    // Non-blocking: continue with local storage
+    console.error("Error updating flower in Supabase:", e.message);
+    throw e;
   }
 }
 
-async function getPlantById(id) {
+async function addImage(imageData, type = 'plant') {
   try {
-    const db = await readDB();
-    return (db.plants || []).find(p => p.id === id) || null;
+    const imageId = imageData.id || uuidv4();
+    const idField = type === 'plant' ? 'plant_id' : 'flower_id';
+    const insertData = {
+      id: imageId,
+      [idField]: imageData.plantId || imageData.flowerId,
+      filename: imageData.filename,
+      storage_path: imageData.storagePath,
+      supabase_url: imageData.supabaseUrl,
+      uploaded_at: imageData.uploadedAt || new Date().toISOString(),
+      area: imageData.area,
+      file_size: imageData.fileSize,
+      width: imageData.width,
+      height: imageData.height
+    };
+    
+    const { data, error } = await supabase
+      .from('images')
+      .insert(insertData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   } catch (e) {
-    console.error("Error reading plant:", e.message);
-    return null;
+    console.error("Error adding image to Supabase:", e.message);
+    throw e;
   }
 }
 
-async function getFlowerById(id) {
+async function addConversation(convData, type = 'plant') {
   try {
-    const db = await readDB();
-    return (db.flowers || []).find(f => f.id === id) || null;
+    const convId = convData.id || uuidv4();
+    const idField = type === 'plant' ? 'plant_id' : 'flower_id';
+    const insertData = {
+      id: convId,
+      [idField]: convData.plantId || convData.flowerId,
+      image_id: convData.imageId || null,
+      role: convData.role,
+      text: convData.text,
+      text_en: convData.text_en,
+      text_kn: convData.text_kn,
+      time: convData.time || new Date().toISOString(),
+      growth_delta: convData.growthDelta || null
+    };
+    
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert(insertData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   } catch (e) {
-    console.error("Error reading flower:", e.message);
-    return null;
+    console.error("Error adding conversation to Supabase:", e.message);
+    throw e;
+  }
+}
+
+async function addCareHistory(careData, type = 'plant') {
+  try {
+    const idField = type === 'plant' ? 'plant_id' : 'flower_id';
+    const insertData = {
+      [idField]: careData.plantId || careData.flowerId,
+      action: careData.action,
+      date: careData.date || new Date().toISOString(),
+      notes: careData.notes || ''
+    };
+    
+    const { data, error } = await supabase
+      .from('care_history')
+      .insert(insertData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.error("Error adding care history to Supabase:", e.message);
+    throw e;
   }
 }
 
 async function deletePlantImage(plantId, imageId) {
   try {
-    if (db) {
-      await db.ref(`plants/${plantId}/images/${imageId}`).remove();
-    }
-    // If Firebase not available, deletion will be handled by local db.json writes
+    const { error } = await supabase
+      .from('images')
+      .delete()
+      .eq('id', imageId)
+      .eq('plant_id', plantId);
+    
+    if (error) throw error;
   } catch (e) {
-    console.error("Error deleting plant image from Firebase:", e.message);
-    // Non-blocking: continue with local storage
+    console.error("Error deleting plant image from Supabase:", e.message);
+    throw e;
   }
 }
 
 async function deleteFlowerImage(flowerId, imageId) {
   try {
-    if (db) {
-      await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
-    }
-    // If Firebase not available, deletion will be handled by local db.json writes
+    const { error } = await supabase
+      .from('images')
+      .delete()
+      .eq('id', imageId)
+      .eq('flower_id', flowerId);
+    
+    if (error) throw error;
   } catch (e) {
-    console.error("Error deleting flower image from Firebase:", e.message);
-    // Non-blocking: continue with local storage
-  }
-}
-
-// Sync function: Write local data to Firebase in background
-async function syncDBToFirebase(dbData) {
-  if (!db || !process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
-    return; // Firebase not configured, skip
-  }
-  try {
-    // Clear both collections first to prevent duplicates
-    await db.ref("plants").set({});
-    await db.ref("flowers").set({});
-
-    // Now write the correct data
-    if (dbData.plants && dbData.plants.length > 0) {
-      const plantsObj = {};
-      dbData.plants.forEach((p) => {
-        plantsObj[p.id] = p;
-      });
-      await db.ref("plants").set(plantsObj);
-    }
-    if (dbData.flowers && dbData.flowers.length > 0) {
-      const flowersObj = {};
-      dbData.flowers.forEach((f) => {
-        flowersObj[f.id] = f;
-      });
-      await db.ref("flowers").set(flowersObj);
-    }
-  } catch (e) {
-    console.warn(
-      "⚠️  Background Firebase sync failed (non-blocking):",
-      e.message
-    );
+    console.error("Error deleting flower image from Supabase:", e.message);
+    throw e;
   }
 }
 
@@ -1759,18 +1808,35 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       }
     }
 
+    // Upload to Supabase Storage immediately (with compression)
+    let supabaseUploadResult = null;
+    if (fileBuffer) {
+      try {
+        const filename = path.basename(file.path);
+        supabaseUploadResult = await uploadFileToSupabaseStorage(fileBuffer, filename);
+        if (supabaseUploadResult) {
+          console.log("✅ Image uploaded to Supabase Storage:", supabaseUploadResult.url);
+        }
+      } catch (uploadErr) {
+        console.error("⚠️  Supabase upload failed (continuing with local):", uploadErr.message);
+      }
+    }
+    
     // create minimal image entry (area computed in background)
     const imgEntry = {
       id: uuidv4(),
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebaseUrl: null, // Will be populated after Firebase upload
+      supabaseUrl: supabaseUploadResult?.url || null,
+      firebaseUrl: supabaseUploadResult?.url || null, // For backward compatibility
+      storagePath: supabaseUploadResult?.path || null,
+      fileSize: supabaseUploadResult?.size || file.size,
     };
     plant.images = plant.images || [];
     plant.images.push(imgEntry);
     plant.conversations = plant.conversations || [];
-
+    
     // create placeholder message quickly
     const msgEntry = {
       id: uuidv4(),
@@ -1787,10 +1853,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     };
     plant.conversations.push(msgEntry);
     
-    // Set firebaseUrl to the public /uploads/ URL
-    imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
-    
-    // Save to database
+    // Save to database (using local DB for now, will migrate fully later)
     await writeDB(db);
 
     // respond quickly to the client before doing Firebase upload
@@ -3108,30 +3171,47 @@ app.post(
 
 app.get("/plants", async (req, res) => {
   try {
-    const plants = await getPlants();
-    res.json(Array.isArray(plants) ? plants : Object.values(plants || {}));
+    const owner = req.query.owner;
+    const plants = await getPlants(owner);
+    res.json(plants);
   } catch (e) {
+    console.error("Error fetching plants:", e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// Diagnostic endpoint to check Firebase configuration
-app.get("/admin/firebase-status", (req, res) => {
-  const status = {
-    firebaseInitialized: !!admin.apps.length,
-    databaseInitialized: !!db,
-    bucketInitialized: !!bucket,
-    bucketName: bucket ? bucket.name : null,
-    credentials: {
-      projectId: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
-      hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
-      hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
-      hasPrivateKeyId: !!process.env.FIREBASE_PRIVATE_KEY_ID,
-    },
-    status: (db && bucket) ? "✅ Ready" : db ? "⚠️ Database only" : bucket ? "⚠️ Storage only" : "❌ Not initialized",
-    fallbackMode: !db && !bucket ? "Using local db.json storage" : null,
-  };
-  res.json(status);
+// Diagnostic endpoint to check Supabase configuration
+app.get("/admin/supabase-status", async (req, res) => {
+  try {
+    // Test database connection
+    const { data: plants, error: dbError } = await supabase
+      .from('plants')
+      .select('id')
+      .limit(1);
+    
+    // Test storage connection
+    const { data: buckets, error: storageError } = await supabase.storage.listBuckets();
+    
+    const status = {
+      supabaseUrl: SUPABASE_URL,
+      databaseConnected: !dbError,
+      storageConnected: !storageError,
+      hasServiceKey: !!SUPABASE_SERVICE_KEY,
+      databaseError: dbError?.message || null,
+      storageError: storageError?.message || null,
+      buckets: buckets?.map(b => b.name) || [],
+      status: (!dbError && !storageError) ? "✅ Ready" : "⚠️ Issues detected",
+      message: (!dbError && !storageError) 
+        ? "Supabase is fully configured and working" 
+        : "Check errors above"
+    };
+    res.json(status);
+  } catch (e) {
+    res.status(500).json({ 
+      error: e.message,
+      status: "❌ Configuration error"
+    });
+  }
 });
 
 // Check upload directory
@@ -3351,9 +3431,11 @@ app.get("/flowers/:id", async (req, res) => {
 // Flowers endpoints (lightweight parity with plants)
 app.get("/flowers", async (req, res) => {
   try {
-    const flowers = await getFlowers();
-    res.json(Array.isArray(flowers) ? flowers : Object.values(flowers || {}));
+    const owner = req.query.owner;
+    const flowers = await getFlowers(owner);
+    res.json(flowers);
   } catch (e) {
+    console.error("Error fetching flowers:", e);
     res.status(500).json({ error: e.message });
   }
 });
