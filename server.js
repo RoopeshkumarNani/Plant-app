@@ -2200,6 +2200,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       
       // Insert image with Supabase Storage URL
       // Note: filename in DB is original, but actual file in storage might be .webp
+      // Ensure we always have a valid URL - prioritize Supabase Storage, then fallback URLs
+      const imageUrlToSave = supabaseStorageUrl || imgEntry.firebaseUrl || imgEntry.url || 
+        `https://plant-app-backend-h28h.onrender.com/uploads/${imgEntry.filename}`;
+      
+      console.log(`💾 Saving image to Supabase DB: id=${imgEntry.id}, supabase_url=${supabaseStorageUrl ? '✅' : '❌'}, final_url=${imageUrlToSave.substring(0, 80)}...`);
+      
       const { error: imageError } = await supabase
         .from('images')
         .insert({
@@ -2207,7 +2213,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           [subjectIdField]: plant.id,
           filename: imgEntry.filename, // Keep original filename for reference
           storage_path: supabaseStorageUrl ? imgEntry.filename.replace(/\.(jpg|jpeg|png)$/i, '.webp') : imgEntry.filename,
-          supabase_url: supabaseStorageUrl || imgEntry.firebaseUrl, // Use Supabase Storage URL if available
+          supabase_url: imageUrlToSave, // Always save a URL (Supabase Storage or fallback)
           uploaded_at: imgEntry.uploadedAt,
           area: imgEntry.area || null,
           file_size: file.size || null
