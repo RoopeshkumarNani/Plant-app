@@ -3323,10 +3323,18 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /flowers/:id/images/:imgId", { id, imgId });
+    
+    // Try to get flower from Supabase first, then local DB
+    let flower = await getFlowerById(id);
+    if (!flower) {
+      return res.status(404).json({ error: "Flower not found" });
+    }
+    
+    // Also check local DB for image reference (for file deletion)
     const db = readDB();
     db.flowers = db.flowers || [];
-    const flower = db.flowers.find((p) => p.id === id);
-    if (!flower) return res.status(404).json({ error: "Flower not found" });
+    const localFlower = db.flowers.find((p) => p.id === id);
+    
     // Find image in flower's images array
     const imgIdx = (flower.images || []).findIndex((i) => i.id === imgId);
     if (imgIdx === -1) {
