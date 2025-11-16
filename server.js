@@ -2029,8 +2029,89 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // Set firebaseUrl to the public /uploads/ URL
     imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
     
-    // Save to database
+    // Save to local database (for backward compatibility and fallback)
     await writeDB(db);
+    
+    // Also save to Supabase (for persistence and scalability)
+    try {
+      const table = subjectCollection === "flowers" ? "flowers" : "plants";
+      const subjectIdField = subjectCollection === "flowers" ? "flower_id" : "plant_id";
+      
+      // Check if plant/flower already exists in Supabase
+      const { data: existing } = await supabase
+        .from(table)
+        .select('id')
+        .eq('id', plant.id)
+        .single();
+      
+      if (!existing) {
+        // Insert new plant/flower
+        const { error: subjectError } = await supabase
+          .from(table)
+          .insert({
+            id: plant.id,
+            species: plant.species || "Unknown",
+            nickname: plant.nickname || "",
+            owner: plant.owner || "mother",
+            health_status: plant.profile?.healthStatus || "stable",
+            care_score: plant.profile?.careScore || 50,
+            user_care_style: plant.profile?.userCareStyle || null,
+            preferred_light: plant.profile?.preferredLight || null,
+            watering_frequency: plant.profile?.wateringFrequency || null,
+            adopted_date: plant.profile?.adoptedDate || null
+          });
+        
+        if (subjectError) {
+          console.error(`❌ Error inserting ${table} to Supabase:`, subjectError.message);
+        } else {
+          console.log(`✅ Saved ${table} to Supabase: ${plant.id}`);
+        }
+      } else {
+        console.log(`ℹ️  ${table} already exists in Supabase: ${plant.id}`);
+      }
+      
+      // Insert image
+      const { error: imageError } = await supabase
+        .from('images')
+        .insert({
+          id: imgEntry.id,
+          [subjectIdField]: plant.id,
+          filename: imgEntry.filename,
+          storage_path: imgEntry.filename,
+          supabase_url: imgEntry.firebaseUrl,
+          uploaded_at: imgEntry.uploadedAt,
+          area: imgEntry.area || null,
+          file_size: file.size || null
+        });
+      
+      if (imageError) {
+        console.error(`❌ Error inserting image to Supabase:`, imageError.message);
+      } else {
+        console.log(`✅ Saved image to Supabase: ${imgEntry.id}`);
+      }
+      
+      // Insert conversation
+      const { error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          id: msgEntry.id,
+          [subjectIdField]: plant.id,
+          image_id: imgEntry.id,
+          role: msgEntry.role,
+          text: msgEntry.text,
+          time: msgEntry.time,
+          growth_delta: msgEntry.growthDelta || null
+        });
+      
+      if (convError) {
+        console.error(`❌ Error inserting conversation to Supabase:`, convError.message);
+      } else {
+        console.log(`✅ Saved conversation to Supabase: ${msgEntry.id}`);
+      }
+    } catch (supabaseErr) {
+      console.error(`⚠️  Supabase save failed (non-blocking):`, supabaseErr.message);
+      // Continue - local DB save already succeeded
+    }
 
     // respond quickly to the client before doing Firebase upload
     // Firebase upload will happen in background
