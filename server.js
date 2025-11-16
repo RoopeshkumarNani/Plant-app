@@ -117,46 +117,42 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
     console.log(`   Bucket object:`, { name: bucket.name });
     
     try {
-      // Use bucket.upload() with buffer directly
-      const file = bucket.file(destinationPath);
+      // For string paths, use bucket.upload() with the file directly (most reliable)
+      // For buffers, write to temp file first then upload
+      let uploadPath = filePathOrBuffer;
+      let tempFile = null;
       
-      console.log(`   About to upload buffer of size: ${fileBuffer.length}`);
+      if (typeof filePathOrBuffer !== "string") {
+        // Buffer case: write to temp file first
+        tempFile = path.join(UPLOAD_DIR, `temp-${Date.now()}.jpg`);
+        fs.writeFileSync(tempFile, filePathOrBuffer);
+        uploadPath = tempFile;
+        console.log(`   Buffer written to temp file: ${tempFile}`);
+      }
       
-      // Upload the buffer
-      await new Promise((resolve, reject) => {
-        const stream = file.createWriteStream({
-          metadata: {
-            cacheControl: "public, max-age=31536000",
-            contentType: "image/jpeg",
-          },
-          public: true,
-        });
-        
-        // Handle stream errors
-        stream.on('error', (err) => {
-          console.error("❌ Stream error:", err.message);
-          console.error("   Error code:", err.code);
-          console.error("   Full error:", err);
-          reject(err);
-        });
-        
-        // Handle completion
-        stream.on('finish', () => {
-          console.log("✅ File stream finished successfully");
-          resolve();
-        });
-        
-        // Handle premature close
-        stream.on('close', () => {
-          console.log("📌 Stream closed event fired");
-        });
-        
-        // Write the data
-        stream.write(fileBuffer);
-        stream.end();
+      console.log(`   Uploading file from: ${uploadPath}`);
+      
+      // Use bucket.upload() - the native Firebase method
+      const [uploadedFile] = await bucket.upload(uploadPath, {
+        destination: destinationPath,
+        metadata: {
+          cacheControl: "public, max-age=31536000",
+          contentType: "image/jpeg",
+        },
+        public: true,
       });
       
       console.log("✅ File uploaded to Firebase Storage successfully");
+      
+      // Clean up temp file if we created one
+      if (tempFile) {
+        try {
+          fs.unlinkSync(tempFile);
+          console.log("   Temp file cleaned up");
+        } catch (e) {
+          console.warn("   Could not delete temp file:", e.message);
+        }
+      }
       
       // Return public URL
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
@@ -167,6 +163,7 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
       console.error("   Message:", fileError.message);
       console.error("   Code:", fileError.code);
       if (fileError.errors) console.error("   Details:", fileError.errors);
+      console.error("   Full error:", fileError);
       throw fileError;
     }
   } catch (e) {
