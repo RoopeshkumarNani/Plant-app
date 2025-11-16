@@ -435,7 +435,9 @@ async function syncDBToFirebase(dbData) {
 }
 
 // Define directories BEFORE error handlers that use them
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+const UPLOAD_DIR = process.env.NODE_ENV === 'production' 
+  ? '/app/uploads' 
+  : path.join(__dirname, "uploads");
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
