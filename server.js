@@ -2659,8 +2659,17 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     const idToUse = subjectId || plantId;
     if (!idToUse || !text)
       return res.status(400).json({ error: "subject id and text required" });
-    const db = readDB();
-    const plant = findSubjectById(db, idToUse);
+    
+    // Try to get plant/flower from Supabase first, then local DB
+    let plant = await getPlantById(idToUse);
+    if (!plant) {
+      plant = await getFlowerById(idToUse);
+    }
+    if (!plant) {
+      // Fallback to local DB
+      const db = readDB();
+      plant = findSubjectById(db, idToUse);
+    }
     if (!plant) return res.status(404).json({ error: "Subject not found" });
     plant.conversations = plant.conversations || [];
 
