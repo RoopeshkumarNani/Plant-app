@@ -3367,3 +3367,40 @@ app.post("/admin/reset", (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// Diagnostic endpoint to check if persistent disk is working
+app.get("/disk-status", (req, res) => {
+  try {
+    const uploadDir = UPLOAD_DIR;
+    const testFile = path.join(uploadDir, ".disk-test");
+    const timestamp = new Date().toISOString();
+    
+    // Try to write a test file
+    fs.writeFileSync(testFile, `Disk test at ${timestamp}`);
+    
+    // Try to read it back
+    const content = fs.readFileSync(testFile, 'utf-8');
+    
+    // List files in uploads directory
+    let files = [];
+    if (fs.existsSync(uploadDir)) {
+      files = fs.readdirSync(uploadDir).filter(f => f !== '.disk-test');
+    }
+    
+    res.json({
+      diskAvailable: true,
+      uploadDir: uploadDir,
+      testFileWritten: true,
+      testFileContent: content,
+      filesInUploads: files,
+      fileCount: files.length,
+      message: "Persistent disk is working if .disk-test file exists after server restart"
+    });
+  } catch (e) {
+    res.status(500).json({
+      diskAvailable: false,
+      error: e.message,
+      message: "Cannot write to disk - may be ephemeral storage"
+    });
+  }
+});
