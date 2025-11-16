@@ -227,23 +227,122 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 }
 
 // Firebase Database Helper Functions
-async function getPlants() {
+// Helper function to get plant/flower with all relations (images, conversations)
+async function getPlantWithRelations(id, type = 'plant') {
   try {
-    const db = await readDB();
-    return db.plants || [];
+    const table = type === 'flower' ? 'flowers' : 'plants';
+    const { data: subject, error: subjError } = await supabase
+      .from(table)
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (subjError || !subject) return null;
+    
+    // Get images
+    const { data: images } = await supabase
+      .from('images')
+      .select('*')
+      .eq(type === 'flower' ? 'flower_id' : 'plant_id', id)
+      .order('uploaded_at', { ascending: true });
+    
+    // Get conversations
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq(type === 'flower' ? 'flower_id' : 'plant_id', id)
+      .order('time', { ascending: true });
+    
+    return {
+      ...subject,
+      images: images || [],
+      conversations: conversations || [],
+      profile: {
+        adoptedDate: subject.adopted_date,
+        userCareStyle: subject.user_care_style,
+        preferredLight: subject.preferred_light,
+        wateringFrequency: subject.watering_frequency,
+        healthStatus: subject.health_status || 'stable',
+        careScore: subject.care_score || 50
+      }
+    };
   } catch (e) {
-    console.error("Error reading plants:", e.message);
-    return [];
+    console.error(`Error getting ${type} with relations:`, e.message);
+    return null;
   }
 }
 
-async function getFlowers() {
+async function getPlants(owner = null) {
   try {
+    // Try Supabase first
+    let query = supabase.from('plants').select('*');
+    if (owner && owner !== 'all') {
+      query = query.eq('owner', owner);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      // Get relations for each plant
+      const plants = await Promise.all((data || []).map(async (plant) => {
+        return await getPlantWithRelations(plant.id, 'plant');
+      }));
+      return plants.filter(p => p !== null);
+    }
+    
+    // Fallback to local DB
+    console.warn("Supabase query failed, falling back to local DB");
     const db = await readDB();
-    return db.flowers || [];
+    let plants = db.plants || [];
+    if (owner && owner !== 'all') {
+      plants = plants.filter(p => (p.owner || null) === owner);
+    }
+    return plants;
+  } catch (e) {
+    console.error("Error reading plants:", e.message);
+    // Final fallback
+    try {
+      const db = await readDB();
+      return db.plants || [];
+    } catch (e2) {
+      return [];
+    }
+  }
+}
+
+async function getFlowers(owner = null) {
+  try {
+    // Try Supabase first
+    let query = supabase.from('flowers').select('*');
+    if (owner && owner !== 'all') {
+      query = query.eq('owner', owner);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      // Get relations for each flower
+      const flowers = await Promise.all((data || []).map(async (flower) => {
+        return await getPlantWithRelations(flower.id, 'flower');
+      }));
+      return flowers.filter(f => f !== null);
+    }
+    
+    // Fallback to local DB
+    console.warn("Supabase query failed, falling back to local DB");
+    const db = await readDB();
+    let flowers = db.flowers || [];
+    if (owner && owner !== 'all') {
+      flowers = flowers.filter(f => (f.owner || null) === owner);
+    }
+    return flowers;
   } catch (e) {
     console.error("Error reading flowers:", e.message);
-    return [];
+    // Final fallback
+    try {
+      const db = await readDB();
+      return db.flowers || [];
+    } catch (e2) {
+      return [];
+    }
   }
 }
 
@@ -3223,7 +3322,8 @@ app.post(
 
 app.get("/plants", async (req, res) => {
   try {
-    const plants = await getPlants();
+    const owner = req.query.owner;
+    const plants = await getPlants(owner);
     res.json(Array.isArray(plants) ? plants : Object.values(plants || {}));
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -3490,7 +3590,8 @@ app.get("/flowers/:id", async (req, res) => {
 // Flowers endpoints (lightweight parity with plants)
 app.get("/flowers", async (req, res) => {
   try {
-    const flowers = await getFlowers();
+    const owner = req.query.owner;
+    const flowers = await getFlowers(owner);
     res.json(Array.isArray(flowers) ? flowers : Object.values(flowers || {}));
   } catch (e) {
     res.status(500).json({ error: e.message });
