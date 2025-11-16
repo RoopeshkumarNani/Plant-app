@@ -3398,6 +3398,21 @@ app.post("/admin/reset", async (req, res) => {
   }
 });
 
+// Diagnostic: show raw db.json content
+app.get("/admin/db-content", async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json({
+      plantsCount: (db.plants || []).length,
+      flowersCount: (db.flowers || []).length,
+      plantIds: (db.plants || []).map(p => p.id),
+      flowerIds: (db.flowers || []).map(f => f.id)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Diagnostic endpoint to check if persistent disk is working
 app.get("/disk-status", (req, res) => {
   try {
