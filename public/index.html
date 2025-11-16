@@ -2819,7 +2819,15 @@
                     // ...existing code...
                     const img = document.createElement('img');
                     const last = p.images[p.images.length - 1];
-                    img.src = last ? getImageUrl(last) + '?t=' + Date.now() : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
+                    const imageUrl = last ? getImageUrl(last) + '?t=' + Date.now() : '';
+                    
+                    // Use lazy loading: store URL in data-src, show placeholder in src
+                    if (imageUrl) {
+                        img.dataset.src = imageUrl;
+                        img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/></svg>';
+                    } else {
+                        img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
+                    }
                     card.appendChild(img);
                     const name = document.createElement('div'); name.className = 'plant-name'; name.textContent = p.nickname || p.species || 'Unknown';
                     card.appendChild(name);
@@ -2892,6 +2900,9 @@
                 const filterAll = document.getElementById('filter-all');
                 if (filterAll) filterAll.textContent = 'All Plants';
             }
+            
+            // Initialize lazy loading for images
+            initLazyLoading();
         }
 
         // Flowers loader re-uses the same rendering as plants but fetches /flowers
@@ -2923,7 +2934,15 @@
                     // (no visual 'Flower' badge — rendering is kept minimal)
                     const img = document.createElement('img');
                     const last = p.images && p.images.length ? p.images[p.images.length - 1] : null;
-                    img.src = last ? getImageUrl(last) + '?t=' + Date.now() : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23fff0f6"/></svg>';
+                    const imageUrl = last ? getImageUrl(last) + '?t=' + Date.now() : '';
+                    
+                    // Use lazy loading
+                    if (imageUrl) {
+                        img.dataset.src = imageUrl;
+                        img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/></svg>';
+                    } else {
+                        img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23fff0f6"/></svg>';
+                    }
                     card.appendChild(img);
                     const name = document.createElement('div'); name.className = 'plant-name'; name.textContent = p.nickname || p.species || 'Unknown';
                     card.appendChild(name);
@@ -2956,6 +2975,9 @@
                 const filterAll = document.getElementById('filter-all');
                 if (filterAll) filterAll.textContent = 'All Flowers';
             }
+            
+            // Initialize lazy loading for images
+            initLazyLoading();
         }
 
         // Insert or update a single subject card in the current list without reloading everything
@@ -3018,6 +3040,28 @@
             const url = '/uploads/' + filename;
             console.log('📸 Image URL (fallback):', url);
             return url;
+        }
+
+        // Lazy loading for images - only load when visible on screen
+        let imageObserver = null;
+        function initLazyLoading() {
+            if (imageObserver) imageObserver.disconnect();
+            
+            imageObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting && entry.target.dataset.src) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.dataset.src = ''; // Clear to avoid re-loading
+                        imageObserver.unobserve(img);
+                    }
+                });
+            }, { rootMargin: '100px' }); // Start loading 100px before visible
+            
+            // Observe all images with data-src
+            document.querySelectorAll('img[data-src]').forEach(img => {
+                imageObserver.observe(img);
+            });
         }
 
         // Basic tab wiring
