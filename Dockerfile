@@ -13,7 +13,8 @@ RUN npm install --production
 # Copy app files
 COPY server.js ./
 COPY public ./public
-COPY data ./data
+# Create data directory if it doesn't exist (will be mounted as persistent disk on Render)
+RUN mkdir -p ./data
 
 # Expose port (Cloud Run will set PORT environment variable)
 EXPOSE 8080
