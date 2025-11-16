@@ -481,6 +481,11 @@ async function updateFlower(id, updates) {
 
 async function getPlantById(id) {
   try {
+    // Try Supabase first
+    const plant = await getPlantWithRelations(id, 'plant');
+    if (plant) return plant;
+    
+    // Fallback to local DB
     const db = await readDB();
     return (db.plants || []).find(p => p.id === id) || null;
   } catch (e) {
@@ -491,6 +496,11 @@ async function getPlantById(id) {
 
 async function getFlowerById(id) {
   try {
+    // Try Supabase first
+    const flower = await getPlantWithRelations(id, 'flower');
+    if (flower) return flower;
+    
+    // Fallback to local DB
     const db = await readDB();
     return (db.flowers || []).find(f => f.id === id) || null;
   } catch (e) {
@@ -3214,10 +3224,15 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
     const db = readDB();
     const plant = db.plants.find((p) => p.id === id);
     if (!plant) return res.status(404).json({ error: "Plant not found" });
+    // Find image in plant's images array
     const imgIdx = (plant.images || []).findIndex((i) => i.id === imgId);
-    if (imgIdx === -1)
+    if (imgIdx === -1) {
       return res.status(404).json({ error: "Image not found" });
+    }
     const img = plant.images[imgIdx];
+    
+    // Also check local DB for image reference (for file deletion)
+    const localImg = localPlant ? (localPlant.images || []).find((i) => i.id === imgId) : null;
     console.log("[DELETE] found image", {
       filename: img.filename,
       imgId: img.id,
@@ -3263,13 +3278,19 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
       console.warn("Failed to remove image file", e && e.message);
     }
     
-    // Remove from local DB array
-    plant.images.splice(imgIdx, 1);
-    
-    // If plant has no images left, remove the plant entirely
-    if (!plant.images || plant.images.length === 0) {
-      const pIdx = db.plants.findIndex((pp) => pp.id === plant.id);
-      if (pIdx !== -1) db.plants.splice(pIdx, 1);
+    // Remove from local DB array (if exists)
+    if (localPlant) {
+      const localImgIdx = (localPlant.images || []).findIndex((i) => i.id === imgId);
+      if (localImgIdx !== -1) {
+        localPlant.images.splice(localImgIdx, 1);
+      }
+      
+      // If plant has no images left, remove the plant entirely from local DB
+      if (!localPlant.images || localPlant.images.length === 0) {
+        const pIdx = db.plants.findIndex((pp) => pp.id === plant.id);
+        if (pIdx !== -1) db.plants.splice(pIdx, 1);
+      }
+    }
       
       // Also delete from Supabase
       try {
@@ -3306,10 +3327,15 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
     db.flowers = db.flowers || [];
     const flower = db.flowers.find((p) => p.id === id);
     if (!flower) return res.status(404).json({ error: "Flower not found" });
+    // Find image in flower's images array
     const imgIdx = (flower.images || []).findIndex((i) => i.id === imgId);
-    if (imgIdx === -1)
+    if (imgIdx === -1) {
       return res.status(404).json({ error: "Image not found" });
+    }
     const img = flower.images[imgIdx];
+    
+    // Also check local DB for image reference (for file deletion)
+    const localImg = localFlower ? (localFlower.images || []).find((i) => i.id === imgId) : null;
     console.log("[DELETE] found flower image", {
       filename: img.filename,
       imgId: img.id,
@@ -3345,23 +3371,32 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
       console.error("⚠️  Supabase delete failed (non-blocking):", supabaseErr.message);
     }
     
-    // Remove file if exists
+    // Remove file if exists (use filename from image object)
     try {
-      const full = path.join(UPLOAD_DIR, img.filename);
+      const filenameToDelete = (localImg || img).filename || img.filename;
+      const full = path.join(UPLOAD_DIR, filenameToDelete);
       console.log("[DELETE] attempting unlink", full);
-      if (fs.existsSync(full)) fs.unlinkSync(full);
-      console.log("[DELETE] file removed", full);
+      if (fs.existsSync(full)) {
+        fs.unlinkSync(full);
+        console.log("[DELETE] file removed", full);
+      }
     } catch (e) {
       console.warn("Failed to remove image file", e && e.message);
     }
     
-    // Remove from local DB array
-    flower.images.splice(imgIdx, 1);
-    
-    // If flower has no images left, remove the flower entirely
-    if (!flower.images || flower.images.length === 0) {
-      const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
-      if (pIdx !== -1) db.flowers.splice(pIdx, 1);
+    // Remove from local DB array (if exists)
+    if (localFlower) {
+      const localImgIdx = (localFlower.images || []).findIndex((i) => i.id === imgId);
+      if (localImgIdx !== -1) {
+        localFlower.images.splice(localImgIdx, 1);
+      }
+      
+      // If flower has no images left, remove the flower entirely from local DB
+      if (!localFlower.images || localFlower.images.length === 0) {
+        const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
+        if (pIdx !== -1) db.flowers.splice(pIdx, 1);
+      }
+    }
       
       // Also delete from Supabase
       try {
