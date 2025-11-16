@@ -55,8 +55,17 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   );
 }
 
-// Reference to Firebase Realtime Database
-const db = admin.database();
+// Reference to Firebase Realtime Database (only if Firebase is initialized)
+let db = null;
+if (admin.apps.length > 0) {
+  try {
+    db = admin.database();
+    console.log("✅ Firebase Realtime Database initialized");
+  } catch (e) {
+    console.error("⚠️  Firebase Database initialization failed:", e.message);
+    db = null;
+  }
+}
 
 // Reference to Firebase Storage Bucket
 let bucket = null;
@@ -240,44 +249,84 @@ async function getFlowers() {
 
 async function addPlant(plant) {
   try {
-    const plantRef = db.ref("plants").push();
-    plant.id = plantRef.key;
-    plant.id_backup = plantRef.key;
-    await plantRef.set(plant);
-    return plant;
+    if (db) {
+      const plantRef = db.ref("plants").push();
+      plant.id = plantRef.key;
+      plant.id_backup = plantRef.key;
+      await plantRef.set(plant);
+      return plant;
+    } else {
+      // Fallback: use local storage or Supabase
+      plant.id = plant.id || uuidv4();
+      const dbData = await readDB();
+      dbData.plants = dbData.plants || [];
+      dbData.plants.push(plant);
+      await writeDB(dbData);
+      return plant;
+    }
   } catch (e) {
-    console.error("Error adding plant to Firebase:", e.message);
+    console.error("Error adding plant:", e.message);
     throw e;
   }
 }
 
 async function addFlower(flower) {
   try {
-    const flowerRef = db.ref("flowers").push();
-    flower.id = flowerRef.key;
-    flower.id_backup = flowerRef.key;
-    await flowerRef.set(flower);
-    return flower;
+    if (db) {
+      const flowerRef = db.ref("flowers").push();
+      flower.id = flowerRef.key;
+      flower.id_backup = flowerRef.key;
+      await flowerRef.set(flower);
+      return flower;
+    } else {
+      // Fallback: use local storage or Supabase
+      flower.id = flower.id || uuidv4();
+      const dbData = await readDB();
+      dbData.flowers = dbData.flowers || [];
+      dbData.flowers.push(flower);
+      await writeDB(dbData);
+      return flower;
+    }
   } catch (e) {
-    console.error("Error adding flower to Firebase:", e.message);
+    console.error("Error adding flower:", e.message);
     throw e;
   }
 }
 
 async function updatePlant(id, updates) {
   try {
-    await db.ref(`plants/${id}`).update(updates);
+    if (db) {
+      await db.ref(`plants/${id}`).update(updates);
+    } else {
+      // Fallback: use local storage
+      const dbData = await readDB();
+      const plantIndex = (dbData.plants || []).findIndex(p => p.id === id);
+      if (plantIndex >= 0) {
+        dbData.plants[plantIndex] = { ...dbData.plants[plantIndex], ...updates };
+        await writeDB(dbData);
+      }
+    }
   } catch (e) {
-    console.error("Error updating plant in Firebase:", e.message);
+    console.error("Error updating plant:", e.message);
     throw e;
   }
 }
 
 async function updateFlower(id, updates) {
   try {
-    await db.ref(`flowers/${id}`).update(updates);
+    if (db) {
+      await db.ref(`flowers/${id}`).update(updates);
+    } else {
+      // Fallback: use local storage
+      const dbData = await readDB();
+      const flowerIndex = (dbData.flowers || []).findIndex(f => f.id === id);
+      if (flowerIndex >= 0) {
+        dbData.flowers[flowerIndex] = { ...dbData.flowers[flowerIndex], ...updates };
+        await writeDB(dbData);
+      }
+    }
   } catch (e) {
-    console.error("Error updating flower in Firebase:", e.message);
+    console.error("Error updating flower:", e.message);
     throw e;
   }
 }
@@ -304,18 +353,38 @@ async function getFlowerById(id) {
 
 async function deletePlantImage(plantId, imageId) {
   try {
-    await db.ref(`plants/${plantId}/images/${imageId}`).remove();
+    if (db) {
+      await db.ref(`plants/${plantId}/images/${imageId}`).remove();
+    } else {
+      // Fallback: use local storage
+      const dbData = await readDB();
+      const plant = (dbData.plants || []).find(p => p.id === plantId);
+      if (plant && plant.images) {
+        plant.images = plant.images.filter(img => img.id !== imageId);
+        await writeDB(dbData);
+      }
+    }
   } catch (e) {
-    console.error("Error deleting plant image from Firebase:", e.message);
+    console.error("Error deleting plant image:", e.message);
     throw e;
   }
 }
 
 async function deleteFlowerImage(flowerId, imageId) {
   try {
-    await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
+    if (db) {
+      await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
+    } else {
+      // Fallback: use local storage
+      const dbData = await readDB();
+      const flower = (dbData.flowers || []).find(f => f.id === flowerId);
+      if (flower && flower.images) {
+        flower.images = flower.images.filter(img => img.id !== imageId);
+        await writeDB(dbData);
+      }
+    }
   } catch (e) {
-    console.error("Error deleting flower image from Firebase:", e.message);
+    console.error("Error deleting flower image:", e.message);
     throw e;
   }
 }
