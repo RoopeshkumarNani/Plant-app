@@ -1624,7 +1624,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     
     const { species, nickname, plantId, subjectType, subjectId, owner } =
       req.body;
-    const db = readDB();
+    const db = await readDB();
 
     // Fast-path: create minimal image entry and placeholder message, persist quickly
     let subjectCollection = "plants";
@@ -1715,7 +1715,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
     
     // Save to database
-    writeDB(db);
+    await writeDB(db);
 
     // respond quickly to the client before doing Firebase upload
     // Firebase upload will happen in background
