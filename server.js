@@ -281,7 +281,7 @@ async function getPlants(owner = null) {
     }
     const { data, error } = await query.order('created_at', { ascending: false });
     
-    if (!error && data) {
+    if (!error && data && data.length > 0) {
       // Get relations for each plant
       const plants = await Promise.all((data || []).map(async (plant) => {
         return await getPlantWithRelations(plant.id, 'plant');
@@ -289,8 +289,12 @@ async function getPlants(owner = null) {
       return plants.filter(p => p !== null);
     }
     
-    // Fallback to local DB
-    console.warn("Supabase query failed, falling back to local DB");
+    // Fallback to local DB (if Supabase is empty or has error)
+    if (error) {
+      console.warn("Supabase query failed, falling back to local DB:", error.message);
+    } else {
+      console.log("Supabase plants table is empty, checking local DB...");
+    }
     const db = await readDB();
     let plants = db.plants || [];
     if (owner && owner !== 'all') {
@@ -318,7 +322,7 @@ async function getFlowers(owner = null) {
     }
     const { data, error } = await query.order('created_at', { ascending: false });
     
-    if (!error && data) {
+    if (!error && data && data.length > 0) {
       // Get relations for each flower
       const flowers = await Promise.all((data || []).map(async (flower) => {
         return await getPlantWithRelations(flower.id, 'flower');
@@ -326,8 +330,12 @@ async function getFlowers(owner = null) {
       return flowers.filter(f => f !== null);
     }
     
-    // Fallback to local DB
-    console.warn("Supabase query failed, falling back to local DB");
+    // Fallback to local DB (if Supabase is empty or has error)
+    if (error) {
+      console.warn("Supabase query failed, falling back to local DB:", error.message);
+    } else {
+      console.log("Supabase flowers table is empty, checking local DB...");
+    }
     const db = await readDB();
     let flowers = db.flowers || [];
     if (owner && owner !== 'all') {
