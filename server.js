@@ -2847,9 +2847,14 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
       ? "If the user is asking about species, answer directly with the recorded species and any identification confidence. Keep it short and do not include meta commentary."
       : "";
 
+    // Add language-specific instruction
+    const languageInstruction = lang === "kn" 
+      ? "\n\nCRITICAL: The user is chatting in Kannada (ಕನ್ನಡ). You MUST reply ONLY in Kannada. Use natural, colloquial Kannada that a native Kannada speaker would use in everyday conversation. Use authentic Kannada expressions and tone. Be warm and friendly in Kannada."
+      : "\n\nReply naturally in English.";
+    
     const prompt = `${speciesLine}\n${speciesInstruction}\nYou're ${
       plant.nickname ? plant.nickname : `a ${plant.species || "plant"}`
-    } (${plant.species || "unknown species"}). You live with this person and chat with them like a friend.\n\nWhat you remember:\n${profileSummary}\n\nRecent photos:\n${imageInfo || "No recent photos"}\n\nRecent chat:\n${recent}\n\nThey just said: "${text}"\n\nReply like you're texting them - casual, natural, real. 1-2 sentences usually. Be yourself - react to what they said. If they mentioned watering you, react to that. If they're asking how you are, tell them honestly but casually. Don't be formal or robotic.`;
+    } (${plant.species || "unknown species"}). You live with this person and chat with them like a friend.\n\nWhat you remember:\n${profileSummary}\n\nRecent photos:\n${imageInfo || "No recent photos"}\n\nRecent chat:\n${recent}\n\nThey just said: "${text}"${languageInstruction}\n\nReply like you're texting them - casual, natural, real. 1-2 sentences usually. Be yourself - react to what they said. If they mentioned watering you, react to that. If they're asking how you are, tell them honestly but casually. Don't be formal or robotic.`;
 
     console.log("[/reply] calling LLM with prompt length", prompt.length);
     writeReplyDebug("/reply BEFORE_CALL_OPENAI prompt_len=" + prompt.length);
