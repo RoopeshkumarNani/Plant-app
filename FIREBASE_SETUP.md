@@ -26,6 +26,7 @@ FIREBASE_CLIENT_ID=110143004379709851929
 ## Step 3: Verify Setup
 
 Wait 2-3 minutes for Render to redeploy, then check logs for:
+
 ```
 ✅ Firebase Admin SDK initialized
 ```

@@ -39,12 +39,14 @@
 ### Step 3️⃣: Deploy Frontend to Firebase + Update Backend URL (5 minutes)
 
 1. **Update Backend URL in Code**
+
    - Open `public/config.js`
    - Find: `const RENDER_BACKEND_URL = '...'`
    - Replace with your Render URL from Step 1
    - Example: `const RENDER_BACKEND_URL = 'https://plant-app-backend-abc123.onrender.com'`
 
 2. **Commit & Push to GitHub**
+
    ```bash
    git add public/config.js
    git commit -m "Update Render backend URL"
@@ -52,6 +54,7 @@
    ```
 
 3. **Deploy to Firebase**
+
    ```bash
    firebase deploy --only hosting
    ```
@@ -69,6 +72,7 @@
 Visit your app at: **https://my-soulmates.web.app**
 
 ### Test These Features:
+
 - 🌿 Upload a plant/flower
 - 💬 Chat with your plant
 - 🌐 Toggle English/Kannada
@@ -80,15 +84,18 @@ Visit your app at: **https://my-soulmates.web.app**
 ## 🆘 Troubleshooting
 
 ### "Cannot reach backend"
+
 - ✅ Is Render service running? Check: https://dashboard.render.com
 - ✅ Did you update `public/config.js` with correct URL?
 - ✅ Wait 1-2 minutes (Render startup time)
 
 ### "Chat/API not working"
+
 - Check console: F12 → Console tab
 - Verify environment variables are set in Render
 
 ### "Images not showing"
+
 - The `data/` and `uploads/` folders are automatically included
 - Clear browser cache (Ctrl+Shift+Del)
 
@@ -96,12 +103,12 @@ Visit your app at: **https://my-soulmates.web.app**
 
 ## 📊 Cost: $0.00/month
 
-| Service | Free Tier | Cost |
-|---------|-----------|------|
+| Service    | Free Tier             | Cost   |
+| ---------- | --------------------- | ------ |
 | Render.com | 0.5GB RAM, 500 hrs/mo | **$0** |
-| Firebase | 10GB bandwidth | **$0** |
-| Domain | my-soulmates.web.app | **$0** |
-| **TOTAL** | | **$0** |
+| Firebase   | 10GB bandwidth        | **$0** |
+| Domain     | my-soulmates.web.app  | **$0** |
+| **TOTAL**  |                       | **$0** |
 
 ---
 

@@ -2,6 +2,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const compression = require("compression");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
@@ -351,6 +352,9 @@ async function ensureJimpCompatibleImage(imagePath) {
 
 const app = express();
 
+// Enable gzip compression for all responses
+app.use(compression());
+
 // Global error handlers to surface crashes in logs and persist them to disk
 process.on("uncaughtException", (err) => {
   try {
@@ -419,7 +423,20 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(UPLOAD_DIR));
+
+// Optimize image serving: compress and cache
+app.use("/uploads", (req, res, next) => {
+  // Set cache headers for images (1 month)
+  res.set({
+    "Cache-Control": "public, max-age=2592000, immutable",
+    "Content-Encoding": "gzip",
+  });
+  next();
+}, express.static(UPLOAD_DIR, {
+  maxAge: "1d",
+  etag: false
+}));
+
 app.use(express.json());
 
 // Enhanced system prompt: encourage varied, natural responses with personality
@@ -1531,6 +1548,20 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     try {
       fileBuffer = fs.readFileSync(file.path);
       console.log("✅ File read into memory buffer, size:", fileBuffer.length);
+      
+      // Compress image to reduce file size (improves loading speed)
+      try {
+        fileBuffer = await sharp(fileBuffer)
+          .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85, progressive: true })
+          .toBuffer();
+        console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
+        
+        // Write compressed image back to disk
+        fs.writeFileSync(file.path, fileBuffer);
+      } catch (compressErr) {
+        console.warn("⚠️  Image compression failed (continuing with original):", compressErr.message);
+      }
     } catch (e) {
       console.warn("⚠️  Could not read file into buffer:", e.message);
       // Continue anyway - we can still try to use the file path
