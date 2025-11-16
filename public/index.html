@@ -4393,7 +4393,14 @@
                 const jd = await r.json();
                 let plantReply = null;
                 if (r.ok && jd && jd.reply) {
-                    plantReply = jd.reply;
+                    // Use language-specific reply if available, otherwise use main reply
+                    if (currentLanguage === 'kn' && jd.reply_kn) {
+                        plantReply = jd.reply_kn;
+                    } else if (currentLanguage === 'en' && jd.reply_en) {
+                        plantReply = jd.reply_en;
+                    } else {
+                        plantReply = jd.reply;
+                    }
                 } else {
                     // log server problem for debugging and fall back to client generator
                     console.warn('/reply did not return a valid reply', { status: r.status, body: jd });
