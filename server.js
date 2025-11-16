@@ -114,30 +114,36 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 
     // Upload with explicit error handling
     console.log(`   Uploading ${fileSourceDesc} to Firebase...`);
-    const uploadResponse = await bucket.upload(fileBuffer, {
-      destination: destinationPath,
-      metadata: {
-        cacheControl: "public, max-age=31536000",
-        contentType: "image/jpeg",
-      },
-      public: true,
-    });
-    console.log("✅ File uploaded to Firebase Storage successfully");
-
-    // Make file public (should be public already due to public: true above, but ensure it)
-    const file = bucket.file(destinationPath);
+    console.log(`   Bucket object:`, { name: bucket.name, projectId: bucket.projectId });
+    
     try {
-      await file.makePublic();
-      console.log("✅ File confirmed public in Firebase Storage");
-    } catch (e) {
-      console.warn("⚠️  Could not make file public:", e.message);
-      // Continue anyway - file might still be accessible
+      // Try using save() method instead of upload()
+      const file = bucket.file(destinationPath);
+      await file.save(fileBuffer, {
+        metadata: {
+          cacheControl: "public, max-age=31536000",
+          contentType: "image/jpeg",
+        },
+        public: true,
+      });
+      console.log("✅ File saved to Firebase Storage successfully");
+      
+      // Verify it's public
+      try {
+        await file.makePublic();
+        console.log("✅ File confirmed public in Firebase Storage");
+      } catch (e) {
+        console.warn("⚠️  Could not make file public:", e.message);
+      }
+      
+      // Return public URL
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
+      console.log("✅ Firebase Storage URL generated:", publicUrl);
+      return publicUrl;
+    } catch (fileError) {
+      console.error("❌ File save error:", fileError.message);
+      throw fileError;
     }
-
-    // Return public URL
-    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
-    console.log("✅ Firebase Storage URL generated:", publicUrl);
-    return publicUrl;
   } catch (e) {
     console.error("❌ Error uploading to Firebase Storage:");
     console.error("   Message:", e.message);
