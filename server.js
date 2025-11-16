@@ -3000,27 +3000,85 @@ app.post("/admin/prune-empty-plants", (req, res) => {
 });
 
 // Admin: clear all data and delete uploads (destructive). Protected by invite token if configured.
-app.post("/admin/clear-all", requireToken, (req, res) => {
+// Clear all data from both Supabase and local DB
+app.post("/admin/clear-all", requireToken, async (req, res) => {
   try {
-    // delete upload files
+    console.log("🗑️  Starting complete data cleanup...");
+    
+    // 1. Delete from Supabase (in correct order due to foreign keys)
     try {
+      console.log("🗑️  Deleting from Supabase...");
+      await supabase.from('care_history').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+      await supabase.from('conversations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('images').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('flowers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('plants').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      console.log("✅ Supabase data deleted");
+    } catch (supabaseErr) {
+      console.error("⚠️  Supabase deletion error:", supabaseErr.message);
+      // Continue with local cleanup
+    }
+    
+    // 2. Delete all files from Supabase Storage
+    try {
+      console.log("🗑️  Deleting files from Supabase Storage...");
+      const { data: files, error: listError } = await supabase.storage
+        .from('images')
+        .list('', { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+      
+      if (!listError && files && files.length > 0) {
+        const filePaths = files.map(f => f.name);
+        const { error: deleteError } = await supabase.storage
+          .from('images')
+          .remove(filePaths);
+        
+        if (deleteError) {
+          console.error("⚠️  Storage deletion error:", deleteError.message);
+        } else {
+          console.log(`✅ Deleted ${filePaths.length} files from Supabase Storage`);
+        }
+      } else {
+        console.log("ℹ️  No files found in Supabase Storage (or list failed)");
+      }
+    } catch (storageErr) {
+      console.error("⚠️  Storage cleanup error:", storageErr.message);
+    }
+    
+    // 3. Delete local upload files
+    try {
+      console.log("🗑️  Deleting local upload files...");
       const files = fs.readdirSync(UPLOAD_DIR);
+      let deletedCount = 0;
       files.forEach((f) => {
         try {
           fs.unlinkSync(path.join(UPLOAD_DIR, f));
+          deletedCount++;
         } catch (e) {
           console.warn("failed to remove upload", f, e && e.message);
         }
       });
+      console.log(`✅ Deleted ${deletedCount} local files`);
     } catch (e) {
-      console.warn("failed to list uploads", e && e.message);
+      console.warn("⚠️  Failed to list/delete local uploads:", e && e.message);
     }
-    // reset DB
-    const newDb = { plants: [], flowers: [] };
-    writeDB(newDb);
-    return res.json({ success: true });
+    
+    // 4. Reset local DB
+    try {
+      console.log("🗑️  Resetting local DB...");
+      const newDb = { plants: [], flowers: [] };
+      await writeDB(newDb);
+      console.log("✅ Local DB reset");
+    } catch (e) {
+      console.error("⚠️  Local DB reset error:", e.message);
+    }
+    
+    console.log("✅ Complete data cleanup finished");
+    return res.json({ 
+      success: true,
+      message: "All data cleared from Supabase, Storage, and local files"
+    });
   } catch (e) {
-    console.error("clear-all failed", e);
+    console.error("❌ clear-all failed", e);
     return res.status(500).json({ error: e && e.message });
   }
 });
