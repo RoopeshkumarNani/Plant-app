@@ -2673,11 +2673,22 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     // accept plantId or subjectId (for flowers) for backwards compatibility
     const { plantId, subjectId, text, imageId, language } = req.body;
     const lang = language || "en";
+    
+    // CRITICAL: Log language detection
+    console.log("[/reply] 🔍 Language detection:", {
+      received: language,
+      using: lang,
+      isKannada: lang === "kn",
+      textPreview: typeof text === "string" ? text.substring(0, 50) : typeof text
+    });
+    
     writeReplyDebug(
       "/reply INCOMING " +
         JSON.stringify({
           plantId,
           language: lang,
+          receivedLanguage: language,
+          isKannada: lang === "kn",
           text:
             typeof text === "string"
               ? text.length > 120
@@ -2690,6 +2701,8 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     console.log("[/reply] incoming", {
       plantId,
       language: lang,
+      receivedLanguage: language,
+      isKannada: lang === "kn",
       text:
         typeof text === "string"
           ? text.length > 120
