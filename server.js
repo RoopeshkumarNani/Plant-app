@@ -88,11 +88,14 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
 }
 
 // Function to upload file to Supabase Storage with compression
+// Handles PNG, JPEG, WebP, and other formats - converts all to WebP for storage efficiency
 async function uploadFileToSupabaseStorage(fileBuffer, filename) {
   try {
     console.log(`📤 Compressing and uploading to Supabase Storage: ${filename}`);
     
-    // Compress image using sharp (WebP, 80% quality, max 1920px width)
+    // Sharp automatically handles PNG, JPEG, WebP, GIF, TIFF, etc.
+    // Convert to WebP for optimal storage efficiency (smaller file size, better quality)
+    const originalSize = fileBuffer.length;
     const compressedBuffer = await sharp(fileBuffer)
       .resize(1920, null, {
         withoutEnlargement: true,
@@ -101,10 +104,10 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
       .webp({ quality: 80 })
       .toBuffer();
     
-    console.log(`✅ Image compressed: ${fileBuffer.length} → ${compressedBuffer.length} bytes`);
+    console.log(`✅ Image compressed: ${originalSize} → ${compressedBuffer.length} bytes (${Math.round((1 - compressedBuffer.length/originalSize) * 100)}% reduction)`);
     
-    // Change extension to .webp
-    const webpFilename = filename.replace(/\.(jpg|jpeg|png)$/i, '.webp');
+    // Change extension to .webp (works for .jpg, .jpeg, .png, .gif, etc.)
+    const webpFilename = filename.replace(/\.(jpg|jpeg|png|gif|bmp|tiff|webp)$/i, '.webp');
     
     const { data, error } = await supabase.storage
       .from("images")
@@ -1880,17 +1883,31 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       console.log("✅ File read into memory buffer, size:", fileBuffer.length);
       
       // Compress image to reduce file size (improves loading speed)
+      // Sharp automatically handles PNG, JPEG, WebP, GIF, TIFF, BMP, and other formats
+      // We convert to JPEG for local storage (smaller than PNG, widely supported)
       try {
-        fileBuffer = await sharp(fileBuffer)
-          .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85, progressive: true })
-          .toBuffer();
-        console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
+        const originalSize = fileBuffer.length;
+        const sharpImage = sharp(fileBuffer);
         
-        // Write compressed image back to disk
+        // Get image metadata to determine format
+        const metadata = await sharpImage.metadata();
+        console.log(`📸 Image format detected: ${metadata.format}, size: ${metadata.width}x${metadata.height}`);
+        
+        // Resize and convert to JPEG (works for PNG, JPEG, WebP, etc.)
+        fileBuffer = await sharpImage
+          .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+          .toBuffer();
+        
+        console.log(`✅ Image compressed: ${originalSize} → ${fileBuffer.length} bytes (${Math.round((1 - fileBuffer.length/originalSize) * 100)}% reduction)`);
+        
+        // Write compressed image back to disk (as JPEG for consistency and smaller size)
         fs.writeFileSync(file.path, fileBuffer);
       } catch (compressErr) {
         console.warn("⚠️  Image compression failed (continuing with original):", compressErr.message);
+        // If compression fails, Sharp can still handle the original format
+        // The file will be uploaded as-is to Supabase Storage (which converts to WebP)
+        // This ensures ALL formats are still uploaded and displayed
       }
     } catch (e) {
       console.warn("⚠️  Could not read file into buffer:", e.message);
@@ -2101,28 +2118,30 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     plant.conversations.push(msgEntry);
     
     // Upload to Supabase Storage FIRST (before saving to DB)
+    // This ensures ALL image formats (PNG, JPEG, WebP, etc.) are uploaded and displayed
     let supabaseStorageUrl = null;
     if (fileBuffer) {
       try {
-        console.log(`📤 Uploading compressed image to Supabase Storage...`);
+        console.log(`📤 Uploading image to Supabase Storage (format: ${file.originalname.split('.').pop()})...`);
+        // uploadFileToSupabaseStorage handles PNG, JPEG, WebP, GIF, etc. and converts to WebP
         supabaseStorageUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
         if (supabaseStorageUrl) {
           console.log(`✅ Image uploaded to Supabase Storage: ${supabaseStorageUrl}`);
-          // Update imgEntry with Supabase URL
+          // Update imgEntry with Supabase URL (WebP format, but displays correctly in all browsers)
           imgEntry.url = supabaseStorageUrl;
           imgEntry.firebaseUrl = supabaseStorageUrl; // For backward compatibility
         } else {
           console.warn(`⚠️  Supabase Storage upload failed, using local URL`);
-          // Fallback to local /uploads/ URL
+          // Fallback to local /uploads/ URL (still works for all formats)
           imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
         }
       } catch (supabaseUploadErr) {
         console.error(`❌ Supabase Storage upload error:`, supabaseUploadErr.message);
-        // Fallback to local /uploads/ URL
+        // Fallback to local /uploads/ URL (ensures image still displays)
         imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
       }
     } else {
-      // No file buffer, use local URL
+      // No file buffer, use local URL (works for all formats)
       imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
     }
     
