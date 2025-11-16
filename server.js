@@ -1645,7 +1645,7 @@ async function callOpenAIForMessage(prompt, language = "en") {
               body: JSON.stringify({
                 model: "gpt-4o-mini",
                 messages: [{ role: "user", content: prompt }],
-                max_tokens: 220,
+                max_tokens: 180,
                 temperature: 0.95,
                 top_p: 0.95,
                 frequency_penalty: 0.0,
@@ -1686,8 +1686,8 @@ async function callOpenAIChat(messages) {
         body: JSON.stringify({
           model: "gpt-4o-mini",
           messages,
-          max_tokens: 250,
-          temperature: 0.7,
+          max_tokens: 200,
+          temperature: 0.85,
           top_p: 0.9,
           frequency_penalty: 0.2,
           presence_penalty: 0.3,
