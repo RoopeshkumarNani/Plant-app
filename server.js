@@ -2953,18 +2953,37 @@ app.get("/admin/firebase-status", (req, res) => {
 // Test Firebase Storage upload
 app.get("/admin/test-firebase-upload", async (req, res) => {
   try {
+    console.log("🧪 Testing Firebase Storage upload");
+    console.log("   Bucket initialized?", !!bucket);
+    console.log("   Bucket name:", bucket?.name || "N/A");
+    
+    // First, test if we can list files (permission test)
+    if (bucket) {
+      try {
+        console.log("🧪 Testing bucket permissions by listing files...");
+        const [files] = await bucket.getFiles({ maxResults: 1 });
+        console.log("✅ Bucket read permissions OK - can list files");
+      } catch (e) {
+        console.warn("⚠️  Bucket read permission test failed:", e.message);
+      }
+    }
+    
     // Create a simple test file
     const testFilePath = path.join(__dirname, "test-file.txt");
     fs.writeFileSync(testFilePath, "Test content for Firebase Storage");
     
-    console.log("🧪 Testing Firebase Storage upload with test file");
+    console.log("🧪 Attempting Firebase Storage upload with test file");
     const firebaseUrl = await uploadFileToFirebaseStorage(
       testFilePath,
       "test/test-file.txt"
     );
     
     // Clean up
-    fs.unlinkSync(testFilePath);
+    try {
+      fs.unlinkSync(testFilePath);
+    } catch (e) {
+      // ignore
+    }
     
     if (firebaseUrl) {
       res.json({
@@ -2975,7 +2994,11 @@ app.get("/admin/test-firebase-upload", async (req, res) => {
     } else {
       res.json({
         success: false,
-        message: "Firebase Storage upload failed - check logs",
+        message: "Firebase Storage upload failed - check server logs for details",
+        bucketStatus: {
+          initialized: !!bucket,
+          name: bucket?.name,
+        },
       });
     }
   } catch (e) {
@@ -2983,6 +3006,11 @@ app.get("/admin/test-firebase-upload", async (req, res) => {
     res.status(500).json({
       success: false,
       error: e.message,
+      stack: e.stack,
+    });
+  }
+});
+
     });
   }
 });
