@@ -3533,15 +3533,41 @@
                                 // Try plants delete first, if 404 then try flowers delete
                                 let url = baseUrl + `/plants/${p.id}/images/${imgId}`;
                                 console.log('DELETE request URL:', url);
-                                let r = await fetch(url, { method: 'DELETE' });
+                                // Add token if available
+                                const delOpts = { method: 'DELETE' };
+                                if (typeof INVITE_TOKEN !== 'undefined' && INVITE_TOKEN) {
+                                    delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
+                                }
+                                
+                                let r = await fetch(url, delOpts);
                                 if (!r.ok && r.status === 404) {
                                     // try flowers
                                     url = baseUrl + `/flowers/${p.id}/images/${imgId}`;
                                     console.log('Fallback DELETE request URL:', url);
-                                    r = await fetch(url, { method: 'DELETE' });
+                                    r = await fetch(url, delOpts);
                                 }
-                                const txt = await r.text();
-                                if (!r.ok) return alert('Failed to delete: ' + (txt || r.status));
+                                
+                                // Try to parse as JSON first, fallback to text
+                                let errorMsg = '';
+                                try {
+                                    const contentType = r.headers.get('content-type');
+                                    if (contentType && contentType.includes('application/json')) {
+                                        const json = await r.json();
+                                        errorMsg = json.error || json.message || 'Delete failed';
+                                    } else {
+                                        const txt = await r.text();
+                                        // If it looks like HTML, show a generic error
+                                        if (txt.trim().startsWith('<')) {
+                                            errorMsg = `Delete failed: HTTP ${r.status}`;
+                                        } else {
+                                            errorMsg = txt || `Delete failed: HTTP ${r.status}`;
+                                        }
+                                    }
+                                } catch (parseErr) {
+                                    errorMsg = `Delete failed: HTTP ${r.status}`;
+                                }
+                                
+                                if (!r.ok) return alert(errorMsg);
                                 // remove this manage-row and any message UI immediately
                                 try { row.remove(); } catch (e) { }
                                 removeImageUI(filename);
@@ -4527,14 +4553,40 @@
                             // try plants delete first, fall back to flowers
                             let url = baseUrl + `/plants/${plantId}/images/${imgId}`;
                             console.log('DELETE request URL:', url);
-                            let r = await fetch(url, { method: 'DELETE' });
+                            // Add token if available
+                            const delOpts = { method: 'DELETE' };
+                            if (typeof INVITE_TOKEN !== 'undefined' && INVITE_TOKEN) {
+                                delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
+                            }
+                            
+                            let r = await fetch(url, delOpts);
                             if (!r.ok && r.status === 404) {
                                 url = baseUrl + `/flowers/${plantId}/images/${imgId}`;
                                 console.log('Fallback DELETE request URL:', url);
-                                r = await fetch(url, { method: 'DELETE' });
+                                r = await fetch(url, delOpts);
                             }
-                            const txt = await r.text();
-                            if (!r.ok) return alert('Failed to delete: ' + (txt || r.status));
+                            
+                            // Try to parse as JSON first, fallback to text
+                            let errorMsg = '';
+                            try {
+                                const contentType = r.headers.get('content-type');
+                                if (contentType && contentType.includes('application/json')) {
+                                    const json = await r.json();
+                                    errorMsg = json.error || json.message || 'Delete failed';
+                                } else {
+                                    const txt = await r.text();
+                                    // If it looks like HTML, show a generic error
+                                    if (txt.trim().startsWith('<')) {
+                                        errorMsg = `Delete failed: HTTP ${r.status}`;
+                                    } else {
+                                        errorMsg = txt || `Delete failed: HTTP ${r.status}`;
+                                    }
+                                }
+                            } catch (parseErr) {
+                                errorMsg = `Delete failed: HTTP ${r.status}`;
+                            }
+                            
+                            if (!r.ok) return alert(errorMsg);
                             // remove this manage-row and clear any shown image UI
                             try { row.remove(); } catch (e) { }
                             removeImageUI(del.getAttribute('data-fn'));
