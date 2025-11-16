@@ -3349,7 +3349,7 @@ app.post("/flowers", requireToken, express.json(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () =>
-  console.log(`Server started on port ${PORT}`)
+  console.log(`✅ Server started on port ${PORT} - Supabase migration complete`)
 );
 
 // Informational warning if ElevenLabs TTS is not configured so operators see why /tts/eleven returns 403
