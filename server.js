@@ -1964,7 +1964,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebaseUrl: null, // Will be populated after Firebase upload
+      firebaseUrl: null, // Legacy - will be populated after Firebase upload
+      supabaseUrl: null, // Will be populated after Supabase upload
     };
     plant.images = plant.images || [];
     plant.images.push(imgEntry);
@@ -1986,7 +1987,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     };
     plant.conversations.push(msgEntry);
 
-    // Set firebaseUrl to the public /uploads/ URL
+    // Set firebaseUrl to the public /uploads/ URL (legacy)
     imgEntry.firebaseUrl = `${
       process.env.API_BASE_URL || "https://plant-app-backend-h28h.onrender.com"
     }/uploads/${imgEntry.filename}`;
@@ -1994,8 +1995,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // Save to database
     await writeDB(db);
 
-    // respond quickly to the client before doing Firebase upload
-    // Firebase upload will happen in background
+    // respond quickly to the client before doing Supabase upload
+    // Supabase upload will happen in background
     try {
       const subjectTypeResp =
         subjectCollection === "flowers" ? "flower" : "plant";
@@ -2045,7 +2046,58 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           bucket?.name || "N/A"
         );
 
-        // Note: Supabase Storage upload already completed synchronously before response
+        // Upload to Supabase Storage first
+        try {
+          console.log("📤 Uploading to Supabase Storage...");
+          // Generate WebP filename for Supabase (smaller, faster)
+          const webpFilename = imgEntry.id + "-image.webp";
+          
+          // Convert compressed image to WebP for better compression
+          let webpBuffer = fileBuffer;
+          try {
+            webpBuffer = await sharp(fileBuffer)
+              .webp({ quality: 80 })
+              .toBuffer();
+            console.log(`✅ Converted to WebP: ${fileBuffer.length} → ${webpBuffer.length} bytes`);
+          } catch (webpErr) {
+            console.warn("⚠️  WebP conversion failed, using original:", webpErr.message);
+            webpBuffer = fileBuffer;
+          }
+
+          // Upload to Supabase
+          const { data, error } = await supabase.storage
+            .from("images")
+            .upload(webpFilename, webpBuffer, {
+              contentType: "image/webp",
+              upsert: false,
+            });
+
+          if (error) {
+            console.error("❌ Supabase upload error:", error.message);
+          } else {
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+              .from("images")
+              .getPublicUrl(webpFilename);
+            
+            console.log("✅ Image uploaded to Supabase:", publicUrl);
+            imgEntry.supabaseUrl = publicUrl;
+            
+            // Update database with Supabase URL
+            const freshDb = await readDB();
+            const target = findSubjectById(freshDb, plant.id);
+            if (target) {
+              const imgObj = target.images.find(i => i.id === imgEntry.id);
+              if (imgObj) {
+                imgObj.supabaseUrl = publicUrl;
+                await writeDB(freshDb);
+                console.log("✅ Updated DB with Supabase URL");
+              }
+            }
+          }
+        } catch (supabaseErr) {
+          console.error("⚠️  Supabase upload failed:", supabaseErr.message);
+        }
 
         // image analysis
         let area = 0;
