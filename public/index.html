@@ -3029,13 +3029,19 @@
         function getImageUrl(imageOrFilename) {
             if (!imageOrFilename) return '';
 
-            // If it's an object with firebaseUrl, use that first (persistent storage)
-            if (typeof imageOrFilename === 'object' && imageOrFilename.firebaseUrl) {
-                console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
-                return imageOrFilename.firebaseUrl;
+            // If it's an object, check for Supabase URL first (persistent cloud storage)
+            if (typeof imageOrFilename === 'object') {
+                if (imageOrFilename.supabase_url) {
+                    console.log('✅ Using Supabase URL:', imageOrFilename.supabase_url);
+                    return imageOrFilename.supabase_url;
+                }
+                if (imageOrFilename.firebaseUrl) {
+                    console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
+                    return imageOrFilename.firebaseUrl;
+                }
             }
 
-            // Otherwise extract filename  
+            // Otherwise extract filename and construct URL
             let filename = typeof imageOrFilename === 'string' ? imageOrFilename : imageOrFilename.filename;
             if (!filename) return '';
 
@@ -3418,14 +3424,28 @@
                     p.images.forEach(img => {
                         const el = document.createElement('div'); el.className = 'msg';
                         // Render image without exposed uploadedAt metadata (keeps data in DB but not shown)
-                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${getImageUrl(img)}?t=${Date.now()}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo'></div>`;
+                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${getImageUrl(img)}?t=${Date.now()}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:1' title='Click to focus replies on this photo'></div>`;
                         msgs.appendChild(el);
                         try {
                             const imgEl = el.querySelector('img[data-imgid]');
                             if (imgEl) {
-                                // fade in when loaded
-                                imgEl.addEventListener('load', () => { try { imgEl.style.transition = 'opacity 160ms ease'; imgEl.style.opacity = '1'; } catch (e) { } });
-                                imgEl.addEventListener('error', () => { try { imgEl.style.opacity = '1'; imgEl.style.background = '#f6faf6'; } catch (e) { } });
+                                // Show immediately with slight fade effect when loaded
+                                imgEl.style.transition = 'opacity 200ms ease';
+                                imgEl.addEventListener('load', () => { 
+                                    try { 
+                                        imgEl.style.opacity = '1'; 
+                                        console.log('✅ Image loaded:', img.id);
+                                    } catch (e) { } 
+                                });
+                                imgEl.addEventListener('error', () => { 
+                                    try { 
+                                        imgEl.style.opacity = '1'; 
+                                        imgEl.style.background = 'linear-gradient(45deg, #f0f0f0 25%, transparent 25%, transparent 75%, #f0f0f0 75%, #f0f0f0), linear-gradient(45deg, #f0f0f0 25%, transparent 25%, transparent 75%, #f0f0f0 75%, #f0f0f0)';
+                                        imgEl.style.backgroundSize = '20px 20px';
+                                        imgEl.style.backgroundPosition = '0 0, 10px 10px';
+                                        console.error('❌ Image failed to load:', img.id, img.filename);
+                                    } catch (e) { } 
+                                });
                                 imgEl.addEventListener('click', (ev) => {
                                     ev.stopPropagation();
                                     // set selected image id for subsequent replies and visually highlight
