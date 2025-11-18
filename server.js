@@ -548,8 +548,9 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Database functions - use Supabase for plants and flowers with fallback to local JSON
-const USE_SUPABASE = process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY;
+// Database functions - use local JSON for now (works reliably)
+// TODO: Migrate to proper Supabase schema with separate images/conversations tables
+const USE_SUPABASE = false; // Disabled - using local JSON until Supabase schema is set up
 
 async function readDB() {
   try {
