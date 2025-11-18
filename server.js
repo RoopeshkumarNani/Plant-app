@@ -548,9 +548,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Database functions - use local JSON for now (works reliably)
-// TODO: Migrate to proper Supabase schema with separate images/conversations tables
-const USE_SUPABASE = false; // Disabled - using local JSON until Supabase schema is set up
+// Database functions - use Supabase with proper JSON handling
+const USE_SUPABASE = process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY;
 
 async function readDB() {
   try {
@@ -612,27 +611,72 @@ async function writeDB(obj) {
       return;
     }
 
-    // Clear and rewrite to Supabase
+    // Upsert plants to Supabase (serialize nested objects as JSON)
     if (obj.plants && Array.isArray(obj.plants)) {
-      await supabase.from("plants").delete().neq("id", ""); // Delete all
       for (const plant of obj.plants) {
-        const { error } = await supabase.from("plants").insert([plant]);
-        if (error) console.error("Error inserting plant:", error.message);
+        const plantData = {
+          id: plant.id,
+          species: plant.species,
+          nickname: plant.nickname || "",
+          owner: plant.owner || "",
+          images: plant.images || [],  // Stored as JSONB
+          conversations: plant.conversations || [],  // Stored as JSONB
+          profile: plant.profile || {},  // Stored as JSONB
+          identification: plant.identification || null,
+        };
+        const { error } = await supabase
+          .from("plants")
+          .upsert(plantData, { onConflict: "id" });
+        if (error) {
+          console.error("Error upserting plant:", error.message);
+        } else {
+          console.log("✅ Plant upserted:", plant.id);
+        }
       }
     }
 
+    // Upsert flowers to Supabase (serialize nested objects as JSON)
     if (obj.flowers && Array.isArray(obj.flowers)) {
-      await supabase.from("flowers").delete().neq("id", ""); // Delete all
       for (const flower of obj.flowers) {
-        const { error } = await supabase.from("flowers").insert([flower]);
-        if (error) console.error("Error inserting flower:", error.message);
+        const flowerData = {
+          id: flower.id,
+          species: flower.species,
+          nickname: flower.nickname || "",
+          owner: flower.owner || "",
+          images: flower.images || [],  // Stored as JSONB
+          conversations: flower.conversations || [],  // Stored as JSONB
+          profile: flower.profile || {},  // Stored as JSONB
+          identification: flower.identification || null,
+        };
+        const { error } = await supabase
+          .from("flowers")
+          .upsert(flowerData, { onConflict: "id" });
+        if (error) {
+          console.error("Error upserting flower:", error.message);
+        } else {
+          console.log("✅ Flower upserted:", flower.id);
+        }
       }
     }
 
     console.log("✅ Database saved to Supabase");
   } catch (e) {
     console.error("Error writing DB:", e.message);
-    throw e;
+    // Fall back to local file if Supabase fails
+    try {
+      const dbPath = process.env.NODE_ENV === 'production'
+        ? "/app/data/db.json"
+        : path.join(__dirname, "data", "db.json");
+      const dataDir = path.dirname(dbPath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
+      console.log("⚠️  Supabase failed, fell back to local file");
+    } catch (e2) {
+      console.error("❌ Both Supabase and local storage failed:", e2.message);
+      throw e2;
+    }
   }
 }
 
