@@ -2963,6 +2963,20 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
       filename: img.filename,
       imgId: img.id,
     });
+    
+    // Delete from Supabase Storage if URL exists
+    if (img.supabase_url) {
+      try {
+        // Extract filename from Supabase URL
+        const urlParts = img.supabase_url.split('/');
+        const storageFilename = urlParts[urlParts.length - 1];
+        await supabase.storage.from("images").remove([storageFilename]);
+        console.log("[DELETE] removed from Supabase Storage:", storageFilename);
+      } catch (e) {
+        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+      }
+    }
+    
     // remove file if exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
@@ -3005,6 +3019,21 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
       filename: img.filename,
       imgId: img.id,
     });
+    
+    // Delete from Supabase Storage if URL exists
+    if (img.supabase_url) {
+      try {
+        // Extract filename from Supabase URL
+        const urlParts = img.supabase_url.split('/');
+        const storageFilename = urlParts[urlParts.length - 1];
+        await supabase.storage.from("images").remove([storageFilename]);
+        console.log("[DELETE] removed from Supabase Storage:", storageFilename);
+      } catch (e) {
+        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+      }
+    }
+    
+    // Delete local file if it exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
       console.log("[DELETE] attempting unlink", full);
