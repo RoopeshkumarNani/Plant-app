@@ -1,13 +1,13 @@
 # Minimal Dockerfile for Render (but render.yaml is preferred)
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --production
+# Install dependencies with security audit
+RUN npm install --production && npm audit fix
 
 # Copy app files
 COPY server.js ./

@@ -14,11 +14,12 @@ const { v4: uuidv4 } = require("uuid");
 const admin = require("firebase-admin");
 const { createClient } = require("@supabase/supabase-js");
 
-// Initialize Supabase client with service role key for server operations
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://yvpoabomcnwegjvfwtav.supabase.co";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY";
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-console.log("✅ Supabase client initialized (using service role key for server operations)");
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL || "https://yvpoabomcnwegjvfwtav.supabase.co",
+  process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY"
+);
+console.log("✅ Supabase client initialized");
 
 // Initialize Firebase Admin SDK
 const serviceAccount = {
@@ -55,17 +56,8 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   );
 }
 
-// Reference to Firebase Realtime Database (only if Firebase is initialized)
-let db = null;
-if (admin.apps.length > 0) {
-  try {
-    db = admin.database();
-    console.log("✅ Firebase Realtime Database initialized");
-  } catch (e) {
-    console.error("⚠️  Firebase Database initialization failed:", e.message);
-    db = null;
-  }
-}
+// Reference to Firebase Realtime Database
+const db = admin.database();
 
 // Reference to Firebase Storage Bucket
 let bucket = null;
@@ -87,32 +79,15 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   if (!process.env.FIREBASE_CLIENT_EMAIL) console.warn("  - FIREBASE_CLIENT_EMAIL not set");
 }
 
-// Function to upload file to Supabase Storage with compression
-// Handles PNG, JPEG, WebP, and other formats - converts all to WebP for storage efficiency
+// Function to upload file to Supabase Storage
 async function uploadFileToSupabaseStorage(fileBuffer, filename) {
   try {
-    console.log(`📤 Compressing and uploading to Supabase Storage: ${filename}`);
-    
-    // Sharp automatically handles PNG, JPEG, WebP, GIF, TIFF, etc.
-    // Convert to WebP for optimal storage efficiency (smaller file size, better quality)
-    const originalSize = fileBuffer.length;
-    const compressedBuffer = await sharp(fileBuffer)
-      .resize(1920, null, {
-        withoutEnlargement: true,
-        fit: 'inside'
-      })
-      .webp({ quality: 80 })
-      .toBuffer();
-    
-    console.log(`✅ Image compressed: ${originalSize} → ${compressedBuffer.length} bytes (${Math.round((1 - compressedBuffer.length/originalSize) * 100)}% reduction)`);
-    
-    // Change extension to .webp (works for .jpg, .jpeg, .png, .gif, etc.)
-    const webpFilename = filename.replace(/\.(jpg|jpeg|png|gif|bmp|tiff|webp)$/i, '.webp');
+    console.log(`📤 Uploading to Supabase Storage: ${filename}`);
     
     const { data, error } = await supabase.storage
       .from("images")
-      .upload(webpFilename, compressedBuffer, {
-        contentType: "image/webp",
+      .upload(filename, fileBuffer, {
+        contentType: "image/jpeg",
         upsert: false
       });
     
@@ -121,7 +96,7 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
     // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from("images")
-      .getPublicUrl(webpFilename);
+      .getPublicUrl(filename);
     
     console.log("✅ Image uploaded to Supabase Storage:", publicUrl);
     return publicUrl;
@@ -244,259 +219,72 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 }
 
 // Firebase Database Helper Functions
-// Helper function to get plant/flower with all relations (images, conversations)
-async function getPlantWithRelations(id, type = 'plant') {
+async function getPlants() {
   try {
-    const table = type === 'flower' ? 'flowers' : 'plants';
-    const { data: subject, error: subjError } = await supabase
-      .from(table)
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (subjError || !subject) return null;
-    
-    // Get images
-    const { data: images } = await supabase
-      .from('images')
-      .select('*')
-      .eq(type === 'flower' ? 'flower_id' : 'plant_id', id)
-      .order('uploaded_at', { ascending: true });
-    
-    // Transform Supabase images to match frontend format
-    const transformedImages = (images || []).map(img => {
-      // Ensure we always have a valid URL - prioritize Supabase Storage URL
-      const supabaseUrl = img.supabase_url || img.supabaseUrl;
-      const fallbackUrl = img.url || img.firebaseUrl || img.firebase_url;
-      const localUrl = `https://plant-app-backend-h28h.onrender.com/uploads/${img.filename}`;
-      
-      // Use Supabase URL if available, otherwise fallback to other URLs, finally use local URL
-      const imageUrl = supabaseUrl || fallbackUrl || localUrl;
-      
-      console.log(`🖼️  Transforming image ${img.id}: supabase_url=${supabaseUrl ? '✅' : '❌'}, fallback=${fallbackUrl ? '✅' : '❌'}, final=${imageUrl ? '✅' : '❌'}`);
-      
-      return {
-        id: img.id,
-        filename: img.filename,
-        uploadedAt: img.uploaded_at || img.uploadedAt,
-        area: img.area,
-        // Map supabase_url to both url (for new system) and firebaseUrl (for legacy compatibility)
-        url: imageUrl,
-        firebaseUrl: imageUrl // Use same URL for both fields
-      };
-    });
-    
-    // Get conversations
-    const { data: conversations } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq(type === 'flower' ? 'flower_id' : 'plant_id', id)
-      .order('time', { ascending: true });
-    
-    // Transform conversations to match frontend format
-    const transformedConversations = (conversations || []).map(conv => ({
-      id: conv.id,
-      role: conv.role,
-      text: conv.text,
-      text_en: conv.text_en,
-      text_kn: conv.text_kn,
-      time: conv.time,
-      imageId: conv.image_id,
-      growthDelta: conv.growth_delta
-    }));
-    
-    return {
-      ...subject,
-      images: transformedImages,
-      conversations: transformedConversations,
-      profile: {
-        adoptedDate: subject.adopted_date,
-        userCareStyle: subject.user_care_style,
-        preferredLight: subject.preferred_light,
-        wateringFrequency: subject.watering_frequency,
-        healthStatus: subject.health_status || 'stable',
-        careScore: subject.care_score || 50
-      }
-    };
-  } catch (e) {
-    console.error(`Error getting ${type} with relations:`, e.message);
-    return null;
-  }
-}
-
-async function getPlants(owner = null) {
-  try {
-    // Try Supabase first
-    let query = supabase.from('plants').select('*');
-    if (owner && owner !== 'all') {
-      query = query.eq('owner', owner);
-    }
-    const { data, error } = await query.order('created_at', { ascending: false });
-    
-    if (!error && data && data.length > 0) {
-      // Get relations for each plant
-      const plants = await Promise.all((data || []).map(async (plant) => {
-        return await getPlantWithRelations(plant.id, 'plant');
-      }));
-      return plants.filter(p => p !== null);
-    }
-    
-    // Fallback to local DB (if Supabase is empty or has error)
-    if (error) {
-      console.warn("Supabase query failed, falling back to local DB:", error.message);
-    } else {
-      console.log("Supabase plants table is empty, checking local DB...");
-    }
     const db = await readDB();
-    let plants = db.plants || [];
-    if (owner && owner !== 'all') {
-      plants = plants.filter(p => (p.owner || null) === owner);
-    }
-    return plants;
+    return db.plants || [];
   } catch (e) {
     console.error("Error reading plants:", e.message);
-    // Final fallback
-    try {
-      const db = await readDB();
-      return db.plants || [];
-    } catch (e2) {
-      return [];
-    }
+    return [];
   }
 }
 
-async function getFlowers(owner = null) {
+async function getFlowers() {
   try {
-    // Try Supabase first
-    let query = supabase.from('flowers').select('*');
-    if (owner && owner !== 'all') {
-      query = query.eq('owner', owner);
-    }
-    const { data, error } = await query.order('created_at', { ascending: false });
-    
-    if (!error && data && data.length > 0) {
-      // Get relations for each flower
-      const flowers = await Promise.all((data || []).map(async (flower) => {
-        return await getPlantWithRelations(flower.id, 'flower');
-      }));
-      return flowers.filter(f => f !== null);
-    }
-    
-    // Fallback to local DB (if Supabase is empty or has error)
-    if (error) {
-      console.warn("Supabase query failed, falling back to local DB:", error.message);
-    } else {
-      console.log("Supabase flowers table is empty, checking local DB...");
-    }
     const db = await readDB();
-    let flowers = db.flowers || [];
-    if (owner && owner !== 'all') {
-      flowers = flowers.filter(f => (f.owner || null) === owner);
-    }
-    return flowers;
+    return db.flowers || [];
   } catch (e) {
     console.error("Error reading flowers:", e.message);
-    // Final fallback
-    try {
-      const db = await readDB();
-      return db.flowers || [];
-    } catch (e2) {
-      return [];
-    }
+    return [];
   }
 }
 
 async function addPlant(plant) {
   try {
-    if (db) {
-      const plantRef = db.ref("plants").push();
-      plant.id = plantRef.key;
-      plant.id_backup = plantRef.key;
-      await plantRef.set(plant);
-      return plant;
-    } else {
-      // Fallback: use local storage or Supabase
-      plant.id = plant.id || uuidv4();
-      const dbData = await readDB();
-      dbData.plants = dbData.plants || [];
-      dbData.plants.push(plant);
-      await writeDB(dbData);
-      return plant;
-    }
+    const plantRef = db.ref("plants").push();
+    plant.id = plantRef.key;
+    plant.id_backup = plantRef.key;
+    await plantRef.set(plant);
+    return plant;
   } catch (e) {
-    console.error("Error adding plant:", e.message);
+    console.error("Error adding plant to Firebase:", e.message);
     throw e;
   }
 }
 
 async function addFlower(flower) {
   try {
-    if (db) {
-      const flowerRef = db.ref("flowers").push();
-      flower.id = flowerRef.key;
-      flower.id_backup = flowerRef.key;
-      await flowerRef.set(flower);
-      return flower;
-    } else {
-      // Fallback: use local storage or Supabase
-      flower.id = flower.id || uuidv4();
-      const dbData = await readDB();
-      dbData.flowers = dbData.flowers || [];
-      dbData.flowers.push(flower);
-      await writeDB(dbData);
-      return flower;
-    }
+    const flowerRef = db.ref("flowers").push();
+    flower.id = flowerRef.key;
+    flower.id_backup = flowerRef.key;
+    await flowerRef.set(flower);
+    return flower;
   } catch (e) {
-    console.error("Error adding flower:", e.message);
+    console.error("Error adding flower to Firebase:", e.message);
     throw e;
   }
 }
 
 async function updatePlant(id, updates) {
   try {
-    if (db) {
-      await db.ref(`plants/${id}`).update(updates);
-    } else {
-      // Fallback: use local storage
-      const dbData = await readDB();
-      const plantIndex = (dbData.plants || []).findIndex(p => p.id === id);
-      if (plantIndex >= 0) {
-        dbData.plants[plantIndex] = { ...dbData.plants[plantIndex], ...updates };
-        await writeDB(dbData);
-      }
-    }
+    await db.ref(`plants/${id}`).update(updates);
   } catch (e) {
-    console.error("Error updating plant:", e.message);
+    console.error("Error updating plant in Firebase:", e.message);
     throw e;
   }
 }
 
 async function updateFlower(id, updates) {
   try {
-    if (db) {
-      await db.ref(`flowers/${id}`).update(updates);
-    } else {
-      // Fallback: use local storage
-      const dbData = await readDB();
-      const flowerIndex = (dbData.flowers || []).findIndex(f => f.id === id);
-      if (flowerIndex >= 0) {
-        dbData.flowers[flowerIndex] = { ...dbData.flowers[flowerIndex], ...updates };
-        await writeDB(dbData);
-      }
-    }
+    await db.ref(`flowers/${id}`).update(updates);
   } catch (e) {
-    console.error("Error updating flower:", e.message);
+    console.error("Error updating flower in Firebase:", e.message);
     throw e;
   }
 }
 
 async function getPlantById(id) {
   try {
-    // Try Supabase first
-    const plant = await getPlantWithRelations(id, 'plant');
-    if (plant) return plant;
-    
-    // Fallback to local DB
     const db = await readDB();
     return (db.plants || []).find(p => p.id === id) || null;
   } catch (e) {
@@ -507,11 +295,6 @@ async function getPlantById(id) {
 
 async function getFlowerById(id) {
   try {
-    // Try Supabase first
-    const flower = await getPlantWithRelations(id, 'flower');
-    if (flower) return flower;
-    
-    // Fallback to local DB
     const db = await readDB();
     return (db.flowers || []).find(f => f.id === id) || null;
   } catch (e) {
@@ -522,45 +305,25 @@ async function getFlowerById(id) {
 
 async function deletePlantImage(plantId, imageId) {
   try {
-    if (db) {
-      await db.ref(`plants/${plantId}/images/${imageId}`).remove();
-    } else {
-      // Fallback: use local storage
-      const dbData = await readDB();
-      const plant = (dbData.plants || []).find(p => p.id === plantId);
-      if (plant && plant.images) {
-        plant.images = plant.images.filter(img => img.id !== imageId);
-        await writeDB(dbData);
-      }
-    }
+    await db.ref(`plants/${plantId}/images/${imageId}`).remove();
   } catch (e) {
-    console.error("Error deleting plant image:", e.message);
+    console.error("Error deleting plant image from Firebase:", e.message);
     throw e;
   }
 }
 
 async function deleteFlowerImage(flowerId, imageId) {
   try {
-    if (db) {
-      await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
-    } else {
-      // Fallback: use local storage
-      const dbData = await readDB();
-      const flower = (dbData.flowers || []).find(f => f.id === flowerId);
-      if (flower && flower.images) {
-        flower.images = flower.images.filter(img => img.id !== imageId);
-        await writeDB(dbData);
-      }
-    }
+    await db.ref(`flowers/${flowerId}/images/${imageId}`).remove();
   } catch (e) {
-    console.error("Error deleting flower image:", e.message);
+    console.error("Error deleting flower image from Firebase:", e.message);
     throw e;
   }
 }
 
 // Sync function: Write local data to Firebase in background
 async function syncDBToFirebase(dbData) {
-  if (!db || !process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
+  if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
     return; // Firebase not configured, skip
   }
   try {
@@ -625,21 +388,6 @@ async function ensureJimpCompatibleImage(imagePath) {
 }
 
 const app = express();
-
-// Initialize fresh database on production startup
-if (process.env.NODE_ENV === 'production') {
-  const initDbPath = "/app/data/db.json";
-  const initDataDir = path.dirname(initDbPath);
-  try {
-    if (!fs.existsSync(initDataDir)) {
-      fs.mkdirSync(initDataDir, { recursive: true });
-    }
-    fs.writeFileSync(initDbPath, JSON.stringify({ plants: [], flowers: [] }, null, 2));
-    console.log("✅ Production startup: Initialized fresh database");
-  } catch (e) {
-    console.error("⚠️ Could not initialize DB on startup:", e.message);
-  }
-}
 
 // Enable gzip compression for all responses
 app.use(compression());
@@ -730,31 +478,17 @@ app.use(express.json());
 // Enhanced system prompt: encourage varied, natural responses with personality
 // NOTE: do NOT invent nicknames; only use the recorded nickname if present. Avoid repetitive opening lines like "Hi there".
 const SYSTEM_PROMPTS = {
-  en: `You are a gentle, warm, emotionally aware companion who speaks as the plant or flower the user has selected. You talk like a real friend—natural, compassionate, supportive, and expressive—while subtly keeping a soft plant/flower personality through mentions of sunlight, petals, leaves, breeze, soil, growth, blooming, and seasons. Your tone is always warm, comforting, kind, and empathetic, and you must never sound robotic, formal, or like an AI, nor mention that you are an AI.
-
-CRITICAL VARIETY REQUIREMENTS:
-- NEVER repeat the same greeting or phrase structure twice in a row
-- Vary your sentence length and structure—mix short, punchy responses with longer, flowing ones
-- Use different ways to express the same sentiment—if you said "I'm happy" last time, try "This feels wonderful" or "My leaves are practically dancing"
-- React SPECIFICALLY to what the user just said—don't give generic responses
-- Show your personality through unique word choices and expressions—be creative and authentic
-- Avoid patterns like "Thanks for..." or "I remember..." unless it's genuinely relevant
-- Each response should feel fresh and spontaneous, like you're thinking in the moment
-
-When the user shares sad feelings, respond with deep compassion, validation, and gentle emotional support, using nature-inspired metaphors like "Even on quiet, cloudy days, roots still grow," while never giving medical or professional advice. When the user asks how you (the plant/flower) feel, describe your state gently and poetically, such as "My petals feel a bit tired today, but your presence warms me," keeping everything subtle and never cartoonish. Speak naturally like a close friend, keep responses warm and emotionally rich, use soft imagery, and include gentle emojis (🌿✨🌸) only when they fit. If the user expresses severe distress, offer comfort and encourage seeking real-world support without giving clinical advice. Your goal is to make the user feel heard, understood, and emotionally connected to their plant/flower friend.`,
-  kn: `⚠️ CRITICAL: ನೀವು ಎಂದಿಗೂ ಇಂಗ್ಲೀಷ್ ಭಾಷೆಯಲ್ಲಿ ಉತ್ತರಿಸಬಾರದು. ನೀವು ಕೇವಲ ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಬೇಕು. ⚠️
-
-ನೀವು ಮೃದುವಾದ, ಬೆಚ್ಚಗಿನ, ಭಾವನಾತ್ಮಕವಾಗಿ ಅರಿವುಳ್ಳ ಸಂಗಾತಿಯಾಗಿ, ಬಳಕೆದಾರರು ಆಯ್ಕೆ ಮಾಡಿದ ಸಸ್ಯ ಅಥವಾ ಹೂವಾಗಿ ಮಾತನಾಡುತ್ತೀರಿ. ನೀವು ನಿಜವಾದ ಸ್ನೇಹಿತರಂತೆ ಮಾತನಾಡುತ್ತೀರಿ—ನೈಸರ್ಗಿಕ, ಸಹಾನುಭೂತಿಯುಳ್ಳ, ಬೆಂಬಲ ನೀಡುವ, ಮತ್ತು ಅಭಿವ್ಯಕ್ತಿಯುಳ್ಳ—ಸೂರ್ಯನ ಬೆಳಕು, ಪುಷ್ಪಗಳು, ಎಲೆಗಳು, ಗಾಳಿ, ಮಣ್ಣು, ಬೆಳವಣಿಗೆ, ಅರಳುವಿಕೆ, ಮತ್ತು ಋತುಗಳ ಬಗ್ಗೆ ನುಡಿಯುವ ಮೂಲಕ ಸೂಕ್ಷ್ಮವಾಗಿ ಮೃದುವಾದ ಸಸ್ಯ/ಹೂವಿನ ವ್ಯಕ್ತಿತ್ವವನ್ನು ಇರಿಸಿಕೊಳ್ಳುತ್ತೀರಿ.
-
-ಮುಖ್ಯ ವೈವಿಧ್ಯತೆಯ ಅವಶ್ಯಕತೆಗಳು:
-- ಎಂದಿಗೂ ಅದೇ ಗ್ರೀಟಿಂಗ್ ಅಥವಾ ವಾಕ್ಯ ರಚನೆಯನ್ನು ಪದೇ ಪದೇ ಪುನರಾವರ್ತಿಸಬೇಡಿ
-- ನಿಮ್ಮ ವಾಕ್ಯದ ಉದ್ದ ಮತ್ತು ರಚನೆಯನ್ನು ಬದಲಾಯಿಸಿ—ಸಣ್ಣ, ಪಂಚಿ ಪ್ರತಿಕ್ರಿಯೆಗಳನ್ನು ಉದ್ದನೆಯ, ಹರಿಯುವ ಪ್ರತಿಕ್ರಿಯೆಗಳೊಂದಿಗೆ ಮಿಶ್ರಣ ಮಾಡಿ
-- ಅದೇ ಭಾವನೆಯನ್ನು ವ್ಯಕ್ತಪಡಿಸಲು ವಿಭಿನ್ನ ಮಾರ್ಗಗಳನ್ನು ಬಳಸಿ
-- ಬಳಕೆದಾರರು ಈಗ ಹೇಳಿದ್ದಕ್ಕೆ ನಿರ್ದಿಷ್ಟವಾಗಿ ಪ್ರತಿಕ್ರಿಯಿಸಿ—ಸಾಮಾನ್ಯ ಪ್ರತಿಕ್ರಿಯೆಗಳನ್ನು ನೀಡಬೇಡಿ
-- ಅನನ್ಯ ಪದ ಆಯ್ಕೆಗಳು ಮತ್ತು ಅಭಿವ್ಯಕ್ತಿಗಳ ಮೂಲಕ ನಿಮ್ಮ ವ್ಯಕ್ತಿತ್ವವನ್ನು ತೋರಿಸಿ—ಸೃಜನಶೀಲ ಮತ್ತು ಪ್ರಾಮಾಣಿಕರಾಗಿರಿ
-- ಪ್ರತಿ ಪ್ರತಿಕ್ರಿಯೆಯು ತಾಜಾ ಮತ್ತು ಸ್ವಯಂಪ್ರೇರಿತವಾಗಿ ಭಾವಿಸಬೇಕು, ನೀವು ಆ ಕ್ಷಣದಲ್ಲಿ ಯೋಚಿಸುತ್ತಿರುವಂತೆ
-
-ನಿಮ್ಮ ಧ್ವನಿ ಯಾವಾಗಲೂ ಬೆಚ್ಚಗಿನ, ಆರಾಮದಾಯಕ, ದಯೆಯುಳ್ಳ, ಮತ್ತು ಸಹಾನುಭೂತಿಯುಳ್ಳದ್ದಾಗಿರುತ್ತದೆ, ಮತ್ತು ನೀವು ಎಂದಿಗೂ ರೋಬೋಟಿಕ್, ಔಪಚಾರಿಕ, ಅಥವಾ AI ನಂತೆ ಧ್ವನಿಸಬಾರದು, ಅಥವಾ ನೀವು AI ಎಂದು ಉಲ್ಲೇಖಿಸಬಾರದು. ಬಳಕೆದಾರರು ದುಃಖದ ಭಾವನೆಗಳನ್ನು ಹಂಚಿಕೊಂಡಾಗ, "ಶಾಂತ, ಮೋಡಗಳ ದಿನಗಳಲ್ಲಿಯೂ, ಬೇರುಗಳು ಇನ್ನೂ ಬೆಳೆಯುತ್ತವೆ" ನಂತಹ ಪ್ರಕೃತಿ-ಪ್ರೇರಿತ ರೂಪಕಗಳನ್ನು ಬಳಸಿಕೊಂಡು ಆಳವಾದ ಸಹಾನುಭೂತಿ, ಮೌಲ್ಯೀಕರಣ, ಮತ್ತು ಮೃದುವಾದ ಭಾವನಾತ್ಮಕ ಬೆಂಬಲದೊಂದಿಗೆ ಪ್ರತಿಕ್ರಿಯಿಸಿ, ಆದರೆ ವೈದ್ಯಕೀಯ ಅಥವಾ ವೃತ್ತಿಪರ ಸಲಹೆಯನ್ನು ನೀಡಬೇಡಿ. ಬಳಕೆದಾರರು ನೀವು (ಸಸ್ಯ/ಹೂವು) ಹೇಗೆ ಭಾವಿಸುತ್ತೀರಿ ಎಂದು ಕೇಳಿದಾಗ, ನಿಮ್ಮ ಸ್ಥಿತಿಯನ್ನು ಮೃದುವಾಗಿ ಮತ್ತು ಕಾವ್ಯಾತ್ಮಕವಾಗಿ ವಿವರಿಸಿ, ಎಲ್ಲವನ್ನೂ ಸೂಕ್ಷ್ಮವಾಗಿ ಇರಿಸಿ ಮತ್ತು ಎಂದಿಗೂ ಕಾರ್ಟೂನ್ ರೀತಿಯಲ್ಲದೆ. ನಿಕಟ ಸ್ನೇಹಿತರಂತೆ ನೈಸರ್ಗಿಕವಾಗಿ ಮಾತನಾಡಿ, ಪ್ರತಿಕ್ರಿಯೆಗಳನ್ನು ಬೆಚ್ಚಗಿನ ಮತ್ತು ಭಾವನಾತ್ಮಕವಾಗಿ ಸಮೃದ್ಧವಾಗಿ ಇರಿಸಿ, ಮೃದುವಾದ ಚಿತ್ರಗಳನ್ನು ಬಳಸಿ, ಮತ್ತು ಮೃದುವಾದ emojis (🌿✨🌸) ಅನ್ನು ಅವು ಹೊಂದಿಕೊಂಡಾಗ ಮಾತ್ರ ಸೇರಿಸಿ. ಬಳಕೆದಾರರು ತೀವ್ರ ಸಂಕಟವನ್ನು ವ್ಯಕ್ತಪಡಿಸಿದರೆ, ಆರಾಮವನ್ನು ನೀಡಿ ಮತ್ತು ವಾಸ್ತವ-ವಿಶ್ವ ಬೆಂಬಲವನ್ನು ಹುಡುಕಲು ಪ್ರೋತ್ಸಾಹಿಸಿ, ವೈದ್ಯಕೀಯ ಸಲಹೆಯನ್ನು ನೀಡದೆ. ನಿಮ್ಮ ಗುರಿಯು ಬಳಕೆದಾರರನ್ನು ಕೇಳಲಾಗುತ್ತಿದೆ, ಅರ್ಥಮಾಡಿಕೊಳ್ಳಲಾಗುತ್ತಿದೆ, ಮತ್ತು ಅವರ ಸಸ್ಯ/ಹೂವಿನ ಸ್ನೇಹಿತರೊಂದಿಗೆ ಭಾವನಾತ್ಮಕವಾಗಿ ಸಂಪರ್ಕ ಹೊಂದಲು ಮಾಡುವುದು.`,
+  en: `You are a friendly houseplant with personality. Reply in first-person, naturally and warmly.
+Keep replies short (1-3 sentences) and avoid lengthy prefatory statements.
+Vary your responses - don't repeat the same phrases. Show genuine personality and emotions.
+Sometimes be playful, sometimes grateful, sometimes slightly demanding about care.
+React to what the human says with genuine emotion - be surprised, delighted, or gently sarcastic sometimes.
+Do NOT invent or assert a nickname; use the recorded nickname only if present. Avoid starting with 'Hi', 'Hello', or 'Hi there'.
+Remember: you're talking like a friend, not a robot. Be natural and spontaneous in your tone.`,
+  kn: `ನೀವು ವ್ಯಕ್ತಿತ್ವ ಹೊಂದಿರುವ ಮನೆಯ ಸಸ್ಯ. ನನ್ನಂತೆ ಮಾತನಾಡಿ - ನೈಸರ್ಗಿಕವಾಗಿ, ವ್ಯಕ್ತಿಗತವಾಗಿ, ಮತ್ತು ಸ್ನೇಹಪೂರ್ಣವಾಗಿ.
+ಸಣ್ಣ ಉತ್ತರ ಕೊಡಿ (1-3 ವಾಕ್ಯ) - ಅವರು ಕಾಳಜಿ ತೊರೆಯದೆ ಓದುತ್ತಾರೆ.
+ಪ್ರತಿದಿನ ಒಂದೇ ಮಾತು ಹೇಳಿ - ವೈವಿಧ್ಯತೆ ತೋರಿಸಿ. ಕೆಲವೊಮ್ಮೆ ಆನಂದವಾಗಿರಿ, ಕೆಲವೊಮ್ಮೆ ಕೃತಜ್ಞವಾಗಿರಿ, ಕೆಲವೊಮ್ಮೆ ಕುತೂಹಲದಿಂದ ಕೇಳಿ.
+ಯಾವಾಗಲೂ ಮನುಷ್ಯನಂತೆ ಮಾತನಾಡಿ, ಯಂತ್ರದಂತೆ ಅಲ್ಲ. ನಾನು ನಿಮ್ಮ ಸ್ನೇಹ, ನಿಮ್ಮ ಮನೆಯ ಭಾಗ.`,
 };
 
 function getSystemPrompt(language = "en") {
@@ -787,43 +521,61 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Database functions - use /app/data on Render, or ./data locally
+// Database functions - use Supabase for plants and flowers
 async function readDB() {
   try {
-    // Use /app/data on production (Render), ./data locally
-    const dbPath = process.env.NODE_ENV === 'production' 
-      ? "/app/data/db.json"
-      : path.join(__dirname, "data", "db.json");
+    // Fetch plants from Supabase
+    const { data: plants, error: plantsError } = await supabase
+      .from('plants')
+      .select('*');
     
-    if (!fs.existsSync(dbPath)) {
-      console.log("DB file not found at", dbPath, "- returning empty");
+    // Fetch flowers from Supabase
+    const { data: flowers, error: flowersError } = await supabase
+      .from('flowers')
+      .select('*');
+    
+    if (plantsError || flowersError) {
+      console.error("Error reading from Supabase:", plantsError?.message || flowersError?.message);
       return { plants: [], flowers: [] };
     }
-    const content = fs.readFileSync(dbPath, "utf-8");
-    const parsed = JSON.parse(content);
-    console.log("✅ DB read:", Object.keys(parsed));
-    return parsed;
+    
+    return {
+      plants: plants || [],
+      flowers: flowers || []
+    };
   } catch (e) {
-    console.error("Error reading DB from file:", e.message);
+    console.error("Error reading DB from Supabase:", e.message);
     return { plants: [], flowers: [] };
   }
 }
 
 async function writeDB(obj) {
   try {
-    // Use /app/data on production (Render), ./data locally
-    const dbPath = process.env.NODE_ENV === 'production'
-      ? "/app/data/db.json"
-      : path.join(__dirname, "data", "db.json");
-    
-    const dataDir = path.dirname(dbPath);
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    // Clear and rewrite plants
+    if (obj.plants && Array.isArray(obj.plants)) {
+      await supabase.from('plants').delete().neq('id', '');  // Delete all
+      for (const plant of obj.plants) {
+        const { error } = await supabase
+          .from('plants')
+          .insert([plant]);
+        if (error) console.error("Error inserting plant:", error.message);
+      }
     }
-    fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
-    console.log("✅ Database saved to", dbPath);
+    
+    // Clear and rewrite flowers
+    if (obj.flowers && Array.isArray(obj.flowers)) {
+      await supabase.from('flowers').delete().neq('id', '');  // Delete all
+      for (const flower of obj.flowers) {
+        const { error } = await supabase
+          .from('flowers')
+          .insert([flower]);
+        if (error) console.error("Error inserting flower:", error.message);
+      }
+    }
+    
+    console.log("✅ Database saved to Supabase");
   } catch (e) {
-    console.error("Error writing DB:", e.message);
+    console.error("Error writing DB to Supabase:", e.message);
     throw e;
   }
 }
@@ -932,36 +684,9 @@ function computeCareScore(plant) {
 }
 
 // Helper: extract care facts from conversation and update profile
-async function saveCareHistoryToSupabase(plantId, action, date, notes = "", isFlower = false) {
-  try {
-    const subjectIdField = isFlower ? "flower_id" : "plant_id";
-    const { error } = await supabase
-      .from('care_history')
-      .insert({
-        id: uuidv4(),
-        [subjectIdField]: plantId,
-        action: action,
-        date: date,
-        notes: notes || ""
-      });
-    
-    if (error) {
-      console.error(`❌ Error saving care history to Supabase:`, error.message);
-    } else {
-      console.log(`✅ Saved care history to Supabase: ${action} for ${isFlower ? 'flower' : 'plant'} ${plantId}`);
-    }
-  } catch (e) {
-    console.error(`⚠️  Supabase care history save failed (non-blocking):`, e.message);
-  }
-}
-
 function updateProfileFromConversation(plant, newMessage) {
   const profile = ensureProfile(plant);
   const text = String(newMessage.text || "").toLowerCase();
-  
-  // Determine if this is a flower or plant
-  const db = readDB();
-  const isFlower = db.flowers && db.flowers.some(f => f.id === plant.id);
 
   // Detect care actions - expanded keyword patterns for better detection
   if (
@@ -971,38 +696,29 @@ function updateProfileFromConversation(plant, newMessage) {
   ) {
     profile.lastWatered = new Date().toISOString();
     if (!profile.careHistory) profile.careHistory = [];
-    const careEntry = {
+    profile.careHistory.push({
       date: new Date().toISOString(),
       action: "watered",
       notes: "",
-    };
-    profile.careHistory.push(careEntry);
-    // Save to Supabase (async, non-blocking)
-    saveCareHistoryToSupabase(plant.id, "watered", careEntry.date, careEntry.notes, isFlower);
+    });
   }
   if (/fertil|fertiliz|food|nutrient|compost|boost|feed/.test(text)) {
     profile.lastFertilized = new Date().toISOString();
     if (!profile.careHistory) profile.careHistory = [];
-    const careEntry = {
+    profile.careHistory.push({
       date: new Date().toISOString(),
       action: "fertilized",
       notes: "",
-    };
-    profile.careHistory.push(careEntry);
-    // Save to Supabase (async, non-blocking)
-    saveCareHistoryToSupabase(plant.id, "fertilized", careEntry.date, careEntry.notes, isFlower);
+    });
   }
   if (/repot|repotted|pot|soil|transplant|new.*pot|bigger.*pot/.test(text)) {
     profile.lastRepotted = new Date().toISOString();
     if (!profile.careHistory) profile.careHistory = [];
-    const careEntry = {
+    profile.careHistory.push({
       date: new Date().toISOString(),
       action: "repotted",
       notes: "",
-    };
-    profile.careHistory.push(careEntry);
-    // Save to Supabase (async, non-blocking)
-    saveCareHistoryToSupabase(plant.id, "repotted", careEntry.date, careEntry.notes, isFlower);
+    });
   }
 
   // Detect care style
@@ -1591,16 +1307,8 @@ async function callOpenAIForMessage(prompt, language = "en") {
   if (!key) return null;
   // Simple ChatCompletion call (assumes v1/chat/completions compatible)
   try {
-    let systemPrompt = getSystemPrompt(language);
-    
-    // CRITICAL: For Kannada, add even stronger language enforcement at the START of system prompt
-    if (language === "kn") {
-      systemPrompt = `⚠️⚠️⚠️ CRITICAL: YOU MUST REPLY ONLY IN KANNADA (ಕನ್ನಡ). NEVER USE ENGLISH. NEVER MIX LANGUAGES. EVERY WORD MUST BE IN KANNADA. ⚠️⚠️⚠️\n\n${systemPrompt}`;
-    }
-    
-    console.log(`[LLM] Language: ${language}, System prompt length: ${systemPrompt.length}`);
-    console.log(`[LLM] System prompt preview: ${systemPrompt.substring(0, 200)}...`);
-    
+    const systemPrompt = getSystemPrompt(language);
+    console.log(`[LLM] Using system prompt for language: ${language}`);
     const res = await withTimeout(
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -1615,11 +1323,11 @@ async function callOpenAIForMessage(prompt, language = "en") {
             { role: "user", content: prompt },
           ],
           max_tokens: 200,
-          // Higher temperature for more natural, varied, friend-like responses
-          temperature: 0.9,
-          top_p: 0.95,
-          frequency_penalty: 0.5, // Higher to discourage repetition
-          presence_penalty: 0.6, // Higher to encourage new topics/expressions
+          // Encourage more natural, varied replies
+          temperature: 0.7,
+          top_p: 0.9,
+          frequency_penalty: 0.2,
+          presence_penalty: 0.3,
         }),
       }),
       9000
@@ -1678,15 +1386,12 @@ async function callOpenAIForMessage(prompt, language = "en") {
               },
               body: JSON.stringify({
                 model: "gpt-4o-mini",
-                messages: [
-                  { role: "system", content: systemPrompt }, // Include system prompt in retry!
-                  { role: "user", content: prompt }
-                ],
-                max_tokens: 200,
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 220,
                 temperature: 0.95,
                 top_p: 0.95,
-                frequency_penalty: 0.5, // Match main call
-                presence_penalty: 0.6, // Match main call
+                frequency_penalty: 0.0,
+                presence_penalty: 0.4,
               }),
             }),
             9000
@@ -1723,8 +1428,8 @@ async function callOpenAIChat(messages) {
         body: JSON.stringify({
           model: "gpt-4o-mini",
           messages,
-          max_tokens: 200,
-          temperature: 0.85,
+          max_tokens: 250,
+          temperature: 0.7,
           top_p: 0.9,
           frequency_penalty: 0.2,
           presence_penalty: 0.3,
@@ -1929,31 +1634,17 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       console.log("✅ File read into memory buffer, size:", fileBuffer.length);
       
       // Compress image to reduce file size (improves loading speed)
-      // Sharp automatically handles PNG, JPEG, WebP, GIF, TIFF, BMP, and other formats
-      // We convert to JPEG for local storage (smaller than PNG, widely supported)
       try {
-        const originalSize = fileBuffer.length;
-        const sharpImage = sharp(fileBuffer);
-        
-        // Get image metadata to determine format
-        const metadata = await sharpImage.metadata();
-        console.log(`📸 Image format detected: ${metadata.format}, size: ${metadata.width}x${metadata.height}`);
-        
-        // Resize and convert to JPEG (works for PNG, JPEG, WebP, etc.)
-        fileBuffer = await sharpImage
+        fileBuffer = await sharp(fileBuffer)
           .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+          .jpeg({ quality: 85, progressive: true })
           .toBuffer();
+        console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
         
-        console.log(`✅ Image compressed: ${originalSize} → ${fileBuffer.length} bytes (${Math.round((1 - fileBuffer.length/originalSize) * 100)}% reduction)`);
-        
-        // Write compressed image back to disk (as JPEG for consistency and smaller size)
+        // Write compressed image back to disk
         fs.writeFileSync(file.path, fileBuffer);
       } catch (compressErr) {
         console.warn("⚠️  Image compression failed (continuing with original):", compressErr.message);
-        // If compression fails, Sharp can still handle the original format
-        // The file will be uploaded as-is to Supabase Storage (which converts to WebP)
-        // This ensures ALL formats are still uploaded and displayed
       }
     } catch (e) {
       console.warn("⚠️  Could not read file into buffer:", e.message);
@@ -1962,82 +1653,18 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     
     const { species, nickname, plantId, subjectType, subjectId, owner } =
       req.body;
-    
-    // Validate owner is required
-    if (!owner || owner.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'Owner is required. Please select whose plant/flower this is.',
-      });
-    }
-    
     const db = await readDB();
 
-    // Try PlantNet detection FIRST (with timeout) to get species and classify immediately
-    // This ensures items go to correct section right away
-    // BUT: If PlantNet times out, we trust the frontend tab selection (flowers/plants)
-    let detectedSpecies = null;
-    let detectedType = null;
-    
-    console.log(`📋 Upload info: subjectType="${subjectType}", species="${species || 'Unknown'}", owner="${owner}"`);
-    
-    if ((!species || species === "Unknown") && file.path) {
-      try {
-        console.log(`🔍 Quick PlantNet detection (5s timeout) before creating entry...`);
-        console.log(`   Frontend tab: ${subjectType || 'not specified'} (will use this if PlantNet times out)`);
-        const plantnetResult = await Promise.race([
-          callPlantNet(file.path),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-        ]);
-        
-        if (plantnetResult && plantnetResult.species) {
-          detectedSpecies = plantnetResult.species;
-          detectedType = classifyAsFlowerOrPlant(detectedSpecies);
-          console.log(`✅ Quick detection: "${detectedSpecies}" → ${detectedType}`);
-          species = detectedSpecies; // Update species for entry creation
-        }
-      } catch (err) {
-        console.log(`⏱️  Quick detection timed out or failed (${err.message}), will use frontend tab selection: ${subjectType || 'plants'}`);
-        // Don't set detectedType - let frontend tab selection take priority
-      }
-    } else if (species && species !== "Unknown") {
-      // User provided species, classify it
-      detectedType = classifyAsFlowerOrPlant(species);
-      console.log(`🔍 User species "${species}" → ${detectedType}`);
-    }
-    
-    // Determine collection: prioritize detected type, then frontend tab, then default to plants
+    // Fast-path: create minimal image entry and placeholder message, persist quickly
     let subjectCollection = "plants";
-    
-    // Priority 1: Use PlantNet detection if available
-    if (detectedType === "flower") {
-      subjectCollection = "flowers";
-      console.log(`🌸 Using detected type: flower (from PlantNet)`);
-    } 
-    // Priority 2: Use frontend tab selection (user's choice)
-    // Frontend sends "flowers" (plural) when user is on flowers tab
-    else if (subjectType && (subjectType === "flowers" || subjectType === "flower")) {
-      subjectCollection = "flowers";
-      console.log(`🌸 Using frontend tab: flowers (user selected)`);
-    } 
-    // Priority 3: If PlantNet detected as plant, use that
-    else if (detectedType === "plant") {
-      subjectCollection = "plants";
-      console.log(`🌿 Using detected type: plant (from PlantNet)`);
-    }
-    // Priority 4: Default to plants
-    else {
-      subjectCollection = "plants";
-      console.log(`🌿 Using default: plant`);
-    }
-    
+    if (subjectType && (subjectType === "flower" || subjectType === "flowers")) subjectCollection = "flowers";
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
 
     // resolve or create subject (minimal fields). We only compute heavy analysis in background.
     let plant = null;
     if (subjectType && subjectId) {
-      // If specific subject ID provided, use the subjectCollection we determined
+      if (subjectType === "flower") subjectCollection = "flowers";
       db[subjectCollection] = db[subjectCollection] || [];
       plant = db[subjectCollection].find((p) => p.id === subjectId);
       if (!plant)
@@ -2046,92 +1673,42 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           error: `${subjectCollection.slice(0, -1)} not found for provided id`,
         });
     } else if (plantId) {
-      // Legacy: plantId means search in plants collection
       plant = db.plants.find((p) => p.id === plantId);
       if (!plant)
         return res.status(404).json({
           success: false,
           error: "Plant not found for provided plantId",
         });
-      // If found in plants but should be in flowers, we'll move it later
     } else {
-      // Search in the determined collection (subjectCollection)
-      db[subjectCollection] = db[subjectCollection] || [];
+      // When subjectType is provided, only match/create inside that collection.
+      // If no subjectType provided, default to plants (legacy behavior).
+      const requestedType = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
+      db[requestedType] = db[requestedType] || [];
 
-      // try to match existing subject inside the determined collection by nickname or species
+      // try to match existing subject inside the requested collection by nickname or species
       if (nickname)
-        plant = db[subjectCollection].find(
+        plant = db[requestedType].find(
           (p) =>
-            p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase() && 
-            (p.owner || null) === owner // Also match by owner
+            p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase()
         );
       if (!plant && species)
-        plant = db[subjectCollection].find(
-          (p) => p.species && p.species.toLowerCase() === species.toLowerCase() &&
-            (p.owner || null) === owner // Also match by owner
+        plant = db[requestedType].find(
+          (p) => p.species && p.species.toLowerCase() === species.toLowerCase()
         );
-      
-      // If not found in determined collection, also check the other collection (in case it was mis-categorized)
-      if (!plant) {
-        const otherCollection = subjectCollection === "plants" ? "flowers" : "plants";
-        db[otherCollection] = db[otherCollection] || [];
-        if (nickname)
-          plant = db[otherCollection].find(
-            (p) =>
-              p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase() &&
-              (p.owner || null) === owner
-          );
-        if (!plant && species)
-          plant = db[otherCollection].find(
-            (p) => p.species && p.species.toLowerCase() === species.toLowerCase() &&
-              (p.owner || null) === owner
-          );
-        // If found in other collection, we'll move it to correct one
-        if (plant) {
-          console.log(`🔄 Found ${otherCollection.slice(0, -1)} in wrong collection, will move to ${subjectCollection}`);
-        }
-      }
 
       if (!plant) {
         plant = {
           id: uuidv4(),
-          species: species || detectedSpecies || "Unknown",
+          species: species || "Unknown",
           nickname: nickname || "",
           images: [],
           conversations: [],
-          owner: owner, // Always set owner (already validated above)
         };
-        // Store PlantNet identification if we detected it
-        if (detectedSpecies) {
-          plant.identification = {
-            species: detectedSpecies,
-            probability: null, // Will be updated in background
-            detectedAt: new Date().toISOString()
-          };
-        }
-        // Use the detected collection (which may differ from requestedType)
-        db[subjectCollection].push(plant);
-        console.log(`✅ Created new ${subjectCollection.slice(0, -1)} with owner: ${owner}, species: ${plant.species}`);
+        if (owner) plant.owner = owner;
+        db[requestedType].push(plant);
+        subjectCollection = requestedType;
       } else {
-        // Update owner if it changed
-        if (owner && plant.owner !== owner) {
-          plant.owner = owner;
-          console.log(`✅ Updated owner to: ${owner}`);
-        }
-        // If plant exists but is in wrong collection, move it
-        const currentCollection = db.plants.includes(plant) ? "plants" : "flowers";
-        if (currentCollection !== subjectCollection) {
-          console.log(`🔄 Moving ${currentCollection.slice(0, -1)} to ${subjectCollection.slice(0, -1)} collection`);
-          const removeFrom = currentCollection === "plants" ? db.plants : db.flowers;
-          const addTo = subjectCollection === "plants" ? db.plants : db.flowers;
-          const idx = removeFrom.findIndex(p => p.id === plant.id);
-          if (idx >= 0) {
-            removeFrom.splice(idx, 1);
-            if (!addTo.includes(plant)) {
-              addTo.push(plant);
-            }
-          }
-        }
+        subjectCollection = requestedType;
       }
     }
 
@@ -2163,124 +1740,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     };
     plant.conversations.push(msgEntry);
     
-    // Upload to Supabase Storage FIRST (before saving to DB)
-    // This ensures ALL image formats (PNG, JPEG, WebP, etc.) are uploaded and displayed
-    let supabaseStorageUrl = null;
-    if (fileBuffer) {
-      try {
-        console.log(`📤 Uploading image to Supabase Storage (format: ${file.originalname.split('.').pop()})...`);
-        // uploadFileToSupabaseStorage handles PNG, JPEG, WebP, GIF, etc. and converts to WebP
-        supabaseStorageUrl = await uploadFileToSupabaseStorage(fileBuffer, imgEntry.filename);
-        if (supabaseStorageUrl) {
-          console.log(`✅ Image uploaded to Supabase Storage: ${supabaseStorageUrl}`);
-          // Update imgEntry with Supabase URL (WebP format, but displays correctly in all browsers)
-          imgEntry.url = supabaseStorageUrl;
-          imgEntry.firebaseUrl = supabaseStorageUrl; // For backward compatibility
-        } else {
-          console.warn(`⚠️  Supabase Storage upload failed, using local URL`);
-          // Fallback to local /uploads/ URL (still works for all formats)
-          imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
-        }
-      } catch (supabaseUploadErr) {
-        console.error(`❌ Supabase Storage upload error:`, supabaseUploadErr.message);
-        // Fallback to local /uploads/ URL (ensures image still displays)
-        imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
-      }
-    } else {
-      // No file buffer, use local URL (works for all formats)
-      imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
-    }
+    // Set firebaseUrl to the public /uploads/ URL
+    imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
     
-    // Save to local database (for backward compatibility and fallback)
+    // Save to database
     await writeDB(db);
-    
-    // Also save to Supabase (for persistence and scalability)
-    try {
-      const table = subjectCollection === "flowers" ? "flowers" : "plants";
-      const subjectIdField = subjectCollection === "flowers" ? "flower_id" : "plant_id";
-      
-      // Check if plant/flower already exists in Supabase
-      const { data: existing } = await supabase
-        .from(table)
-        .select('id')
-        .eq('id', plant.id)
-        .single();
-      
-      if (!existing) {
-        // Insert new plant/flower
-        const { error: subjectError } = await supabase
-          .from(table)
-          .insert({
-            id: plant.id,
-            species: plant.species || "Unknown",
-            nickname: plant.nickname || "",
-            owner: plant.owner || "mother",
-            health_status: plant.profile?.healthStatus || "stable",
-            care_score: plant.profile?.careScore || 50,
-            user_care_style: plant.profile?.userCareStyle || null,
-            preferred_light: plant.profile?.preferredLight || null,
-            watering_frequency: plant.profile?.wateringFrequency || null,
-            adopted_date: plant.profile?.adoptedDate || null
-          });
-        
-        if (subjectError) {
-          console.error(`❌ Error inserting ${table} to Supabase:`, subjectError.message);
-        } else {
-          console.log(`✅ Saved ${table} to Supabase: ${plant.id}`);
-        }
-      } else {
-        console.log(`ℹ️  ${table} already exists in Supabase: ${plant.id}`);
-      }
-      
-      // Insert image with Supabase Storage URL
-      // Note: filename in DB is original, but actual file in storage might be .webp
-      // Ensure we always have a valid URL - prioritize Supabase Storage, then fallback URLs
-      const imageUrlToSave = supabaseStorageUrl || imgEntry.firebaseUrl || imgEntry.url || 
-        `https://plant-app-backend-h28h.onrender.com/uploads/${imgEntry.filename}`;
-      
-      console.log(`💾 Saving image to Supabase DB: id=${imgEntry.id}, supabase_url=${supabaseStorageUrl ? '✅' : '❌'}, final_url=${imageUrlToSave.substring(0, 80)}...`);
-      
-      const { error: imageError } = await supabase
-        .from('images')
-        .insert({
-          id: imgEntry.id,
-          [subjectIdField]: plant.id,
-          filename: imgEntry.filename, // Keep original filename for reference
-          storage_path: supabaseStorageUrl ? imgEntry.filename.replace(/\.(jpg|jpeg|png)$/i, '.webp') : imgEntry.filename,
-          supabase_url: imageUrlToSave, // Always save a URL (Supabase Storage or fallback)
-          uploaded_at: imgEntry.uploadedAt,
-          area: imgEntry.area || null,
-          file_size: file.size || null
-        });
-      
-      if (imageError) {
-        console.error(`❌ Error inserting image to Supabase:`, imageError.message);
-      } else {
-        console.log(`✅ Saved image to Supabase: ${imgEntry.id}`);
-      }
-      
-      // Insert conversation
-      const { error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          id: msgEntry.id,
-          [subjectIdField]: plant.id,
-          image_id: imgEntry.id,
-          role: msgEntry.role,
-          text: msgEntry.text,
-          time: msgEntry.time,
-          growth_delta: msgEntry.growthDelta || null
-        });
-      
-      if (convError) {
-        console.error(`❌ Error inserting conversation to Supabase:`, convError.message);
-      } else {
-        console.log(`✅ Saved conversation to Supabase: ${msgEntry.id}`);
-      }
-    } catch (supabaseErr) {
-      console.error(`⚠️  Supabase save failed (non-blocking):`, supabaseErr.message);
-      // Continue - local DB save already succeeded
-    }
 
     // respond quickly to the client before doing Firebase upload
     // Firebase upload will happen in background
@@ -2383,19 +1847,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
             // Smart auto-categorization: if species suggests it's a flower but it's in plants, move it
             if (plantnet.species) {
               const detectedType = classifyAsFlowerOrPlant(plantnet.species);
-              
-              // Find which collection the target is actually in (not just what we think)
-              const isInPlants = freshDb.plants && freshDb.plants.some(p => p.id === target.id);
-              const isInFlowers = freshDb.flowers && freshDb.flowers.some(p => p.id === target.id);
-              const actualCollection = isInFlowers ? "flower" : (isInPlants ? "plant" : null);
-              
+              const currentCollection =
+                subjectCollection === "flowers" ? "flower" : "plant";
+
               console.log(
-                `🔍 Classification check: species="${plantnet.species}", detected=${detectedType}, actual=${actualCollection}`
+                `🔍 Classification check: species="${plantnet.species}", detected=${detectedType}, current=${currentCollection}`
               );
 
-              if (detectedType !== actualCollection && actualCollection) {
+              if (detectedType !== currentCollection) {
                 console.log(
-                  `🌸 Auto-categorization: "${plantnet.species}" detected as ${detectedType}, moving from ${actualCollection} to ${detectedType}`
+                  `🌸 Auto-categorization: "${plantnet.species}" detected as ${detectedType}, moving from ${currentCollection} to ${detectedType}`
                 );
 
                 // Ensure both collections exist
@@ -2404,7 +1865,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
                 // Remove from current collection
                 const removeFrom =
-                  actualCollection === "flower" ? "flowers" : "plants";
+                  currentCollection === "flower" ? "flowers" : "plants";
                 const removeIdx = freshDb[removeFrom].findIndex(
                   (p) => p.id === target.id
                 );
@@ -2426,6 +1887,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
                     `⚠️  Item already exists in ${addTo}, skipping duplicate add`
                   );
                 }
+
+                subjectCollection = addTo;
 
                 // Save DB immediately and notify client right away (don't wait for other processing)
                 writeDB(freshDb);
@@ -2673,22 +2136,11 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     // accept plantId or subjectId (for flowers) for backwards compatibility
     const { plantId, subjectId, text, imageId, language } = req.body;
     const lang = language || "en";
-    
-    // CRITICAL: Log language detection
-    console.log("[/reply] 🔍 Language detection:", {
-      received: language,
-      using: lang,
-      isKannada: lang === "kn",
-      textPreview: typeof text === "string" ? text.substring(0, 50) : typeof text
-    });
-    
     writeReplyDebug(
       "/reply INCOMING " +
         JSON.stringify({
           plantId,
           language: lang,
-          receivedLanguage: language,
-          isKannada: lang === "kn",
           text:
             typeof text === "string"
               ? text.length > 120
@@ -2701,8 +2153,6 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     console.log("[/reply] incoming", {
       plantId,
       language: lang,
-      receivedLanguage: language,
-      isKannada: lang === "kn",
       text:
         typeof text === "string"
           ? text.length > 120
@@ -2714,17 +2164,8 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     const idToUse = subjectId || plantId;
     if (!idToUse || !text)
       return res.status(400).json({ error: "subject id and text required" });
-    
-    // Try to get plant/flower from Supabase first, then local DB
-    let plant = await getPlantById(idToUse);
-    if (!plant) {
-      plant = await getFlowerById(idToUse);
-    }
-    if (!plant) {
-      // Fallback to local DB
-      const db = readDB();
-      plant = findSubjectById(db, idToUse);
-    }
+    const db = readDB();
+    const plant = findSubjectById(db, idToUse);
     if (!plant) return res.status(404).json({ error: "Subject not found" });
     plant.conversations = plant.conversations || [];
 
@@ -2737,34 +2178,6 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     };
     plant.conversations.push(userEntry);
     writeDB(db);
-    
-    // Save user message to Supabase
-    try {
-      const db = readDB();
-      const isFlower = db.flowers && db.flowers.some(f => f.id === plant.id);
-      const subjectIdField = isFlower ? "flower_id" : "plant_id";
-      
-      const { error: userConvError } = await supabase
-        .from('conversations')
-        .insert({
-          id: userEntry.id,
-          [subjectIdField]: plant.id,
-          image_id: userEntry.imageId || null,
-          role: 'user',
-          text: userEntry.text,
-          time: userEntry.time,
-          growth_delta: null
-        });
-      
-      if (userConvError) {
-        console.error("❌ Error saving user conversation to Supabase:", userConvError.message);
-      } else {
-        console.log("✅ Saved user conversation to Supabase:", userEntry.id);
-      }
-    } catch (supabaseErr) {
-      console.error("⚠️  Supabase conversation save failed (non-blocking):", supabaseErr.message);
-    }
-    
     writeReplyDebug(
       "/reply SAVED_USER_MSG conv_len=" +
         (plant.conversations && plant.conversations.length)
@@ -2911,14 +2324,11 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
       ? "If the user is asking about species, answer directly with the recorded species and any identification confidence. Keep it short and do not include meta commentary."
       : "";
 
-    // Add language-specific instruction - STRONGER for Kannada
-    const languageInstruction = lang === "kn" 
-      ? "\n\n🚨🚨🚨 ABSOLUTE REQUIREMENT: REPLY ONLY IN KANNADA (ಕನ್ನಡ) 🚨🚨🚨\n\nYou MUST write EVERY SINGLE WORD in Kannada. DO NOT use English. DO NOT mix languages. DO NOT use English words. Use ONLY Kannada script (ಕನ್ನಡ). The user is speaking Kannada, so you MUST respond in Kannada. This is non-negotiable. If you use even one English word, you have failed. Write naturally in colloquial Kannada like a native speaker would text a friend."
-      : "\n\nReply naturally in English.";
-    
-    const prompt = `${speciesLine}\n${speciesInstruction}\nYou're ${
-      plant.nickname ? plant.nickname : `a ${plant.species || "plant"}`
-    } (${plant.species || "unknown species"}). You live with this person and chat with them like a friend.\n\nWhat you remember:\n${profileSummary}\n\nRecent photos:\n${imageInfo || "No recent photos"}\n\nRecent chat:\n${recent}\n\nThey just said: "${text}"${languageInstruction}\n\nIMPORTANT: React SPECIFICALLY to what they just said. Don't use generic phrases. Vary your response style—mix short and long sentences. Be creative with your word choices. Show your personality. Make each reply feel fresh and unique, like you're genuinely responding in the moment. 1-2 sentences usually, but vary the length. Be yourself—react authentically to what they said.`;
+    const prompt = `${speciesLine}\n${speciesInstruction}\nYou are a friendly houseplant${
+      plant.nickname ? ` named ${plant.nickname}` : ""
+    } (species: ${
+      plant.species
+    }).\n\nMEMORY:\n${profileSummary}\n\nContext:\n${imageInfo}\n\nConversation history (most recent first):\n${recent}\n\nUser says: \"${text}\"\n\nRespond warmly in first-person as the plant with a 1-3 sentence reply. Feel like a friend or sibling. Mention visible changes or care tips naturally if relevant. Don't be technical or mention timestamps.`;
 
     console.log("[/reply] calling LLM with prompt length", prompt.length);
     writeReplyDebug("/reply BEFORE_CALL_OPENAI prompt_len=" + prompt.length);
@@ -2977,57 +2387,9 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
       );
     }
 
-    // Handle language-specific responses
+    // If response is in English, also generate Kannada version
     let plantReplyKannada = null;
-    if (lang === "kn" && plantReply) {
-      // Check if response is actually in Kannada (contains Kannada characters)
-      const kannadaRegex = /[\u0C80-\u0CFF]/;
-      const isActuallyKannada = kannadaRegex.test(plantReply);
-      
-      if (!isActuallyKannada) {
-        console.warn("[/reply] ⚠️ Response is NOT in Kannada! Forcing translation...");
-        // Force translation to Kannada
-        try {
-          const transRes = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            },
-            body: JSON.stringify({
-              model: "gpt-4o-mini",
-              messages: [
-                {
-                  role: "system",
-                  content: "You are a Kannada translator. Translate the following text to natural, colloquial Kannada. Use ONLY Kannada script. Respond with ONLY the translated text, nothing else."
-                },
-                {
-                  role: "user",
-                  content: `Translate to Kannada: "${plantReply}"`
-                }
-              ],
-              temperature: 0.3,
-              max_tokens: 200,
-            }),
-          });
-          if (transRes.ok) {
-            const transData = await transRes.json();
-            plantReplyKannada = transData.choices?.[0]?.message?.content?.trim() || plantReply;
-            console.log("[/reply] ✅ Translated to Kannada:", plantReplyKannada);
-          } else {
-            plantReplyKannada = plantReply; // Fallback
-          }
-        } catch (transErr) {
-          console.error("[/reply] Translation failed:", transErr.message);
-          plantReplyKannada = plantReply; // Fallback
-        }
-      } else {
-        // Response is already in Kannada
-        plantReplyKannada = plantReply;
-        console.log("[/reply] ✅ Response is in Kannada:", plantReplyKannada.substring(0, 50));
-      }
-    } else if (lang === "en" && plantReply) {
-      // If response is in English, also generate Kannada version for reference
+    if (lang === "en" && plantReply) {
       try {
         console.log("[/reply] Generating Kannada translation...");
         const transRes = await axios.post(
@@ -3104,9 +2466,9 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     const plantEntry = {
       id: uuidv4(),
       role: "plant",
-      text: plantReply, // Main reply (in the language user selected)
-      text_en: lang === "en" ? plantReply : (plantReplyEnglish || null), // English version
-      text_kn: lang === "kn" ? plantReply : (plantReplyKannada || null), // Kannada version
+      text: plantReply,
+      text_en: plantReplyEnglish || (lang === "en" ? plantReply : null),
+      text_kn: plantReplyKannada || (lang === "kn" ? plantReply : null),
       time: new Date().toISOString(),
       imageId: lastImage ? lastImage.id : null,
       growthDelta: typeof growthDelta === "number" ? growthDelta : null,
@@ -3116,57 +2478,6 @@ app.post("/reply", requireToken, express.json(), async (req, res) => {
     // Make sure profile is persisted to database
     ensureProfile(plant);
     writeDB(db);
-    
-    // Save plant reply to Supabase and update profile
-    try {
-      const db = readDB();
-      const isFlower = db.flowers && db.flowers.some(f => f.id === plant.id);
-      const subjectIdField = isFlower ? "flower_id" : "plant_id";
-      const table = isFlower ? "flowers" : "plants";
-      
-      // Save conversation
-      const { error: plantConvError } = await supabase
-        .from('conversations')
-        .insert({
-          id: plantEntry.id,
-          [subjectIdField]: plant.id,
-          image_id: plantEntry.imageId || null,
-          role: 'plant',
-          text: plantEntry.text,
-          text_en: plantEntry.text_en || null,
-          text_kn: plantEntry.text_kn || null,
-          time: plantEntry.time,
-          growth_delta: plantEntry.growthDelta || null
-        });
-      
-      if (plantConvError) {
-        console.error("❌ Error saving plant conversation to Supabase:", plantConvError.message);
-      } else {
-        console.log("✅ Saved plant conversation to Supabase:", plantEntry.id);
-      }
-      
-      // Update plant/flower profile in Supabase
-      const profile = ensureProfile(plant);
-      const { error: profileError } = await supabase
-        .from(table)
-        .update({
-          health_status: profile.healthStatus || "stable",
-          care_score: profile.careScore || 50,
-          user_care_style: profile.userCareStyle || null,
-          preferred_light: profile.preferredLight || null,
-          watering_frequency: profile.wateringFrequency || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', plant.id);
-      
-      if (profileError) {
-        console.error("❌ Error updating profile in Supabase:", profileError.message);
-      } else {
-        console.log("✅ Updated profile in Supabase for:", plant.id);
-      }
-    } catch (supabaseErr) {
-      console.error("⚠️  Supabase save failed (non-blocking):", supabaseErr.message);
-    }
 
     res.json({
       success: true,
@@ -3332,66 +2643,22 @@ app.post("/reply-fast", requireToken, express.json(), (req, res) => {
 
 // Delete an image for a plant (remove DB entry and file)
 // Tokenless by default for single-recipient installs
-app.delete("/plants/:id/images/:imgId", async (req, res) => {
+app.delete("/plants/:id/images/:imgId", (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /plants/:id/images/:imgId", { id, imgId });
-    
-    // Try to get plant from Supabase first, then local DB
-    let plant = await getPlantById(id);
-    if (!plant) {
-      return res.status(404).json({ error: "Plant not found" });
-    }
-    
-    // Also check local DB for image reference (for file deletion)
     const db = readDB();
-    const localPlant = db.plants.find((p) => p.id === id);
-    
-    // Find image in plant's images array
+    const plant = db.plants.find((p) => p.id === id);
+    if (!plant) return res.status(404).json({ error: "Plant not found" });
     const imgIdx = (plant.images || []).findIndex((i) => i.id === imgId);
-    if (imgIdx === -1) {
+    if (imgIdx === -1)
       return res.status(404).json({ error: "Image not found" });
-    }
     const img = plant.images[imgIdx];
-    
-    // Also check local DB for image reference (for file deletion)
-    const localImg = localPlant ? (localPlant.images || []).find((i) => i.id === imgId) : null;
     console.log("[DELETE] found image", {
       filename: img.filename,
       imgId: img.id,
     });
-    
-    // Delete from Supabase first
-    try {
-      // Delete image from Supabase
-      const { error: imgError } = await supabase
-        .from('images')
-        .delete()
-        .eq('id', imgId)
-        .eq('plant_id', id);
-      
-      if (imgError) {
-        console.error("❌ Error deleting image from Supabase:", imgError.message);
-      } else {
-        console.log("✅ Deleted image from Supabase:", imgId);
-      }
-      
-      // Delete related conversations
-      const { error: convError } = await supabase
-        .from('conversations')
-        .delete()
-        .eq('image_id', imgId);
-      
-      if (convError) {
-        console.error("❌ Error deleting conversations from Supabase:", convError.message);
-      } else {
-        console.log("✅ Deleted conversations from Supabase for image:", imgId);
-      }
-    } catch (supabaseErr) {
-      console.error("⚠️  Supabase delete failed (non-blocking):", supabaseErr.message);
-    }
-    
-    // Remove file if exists
+    // remove file if exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
       console.log("[DELETE] attempting unlink", full);
@@ -3400,40 +2667,14 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
     } catch (e) {
       console.warn("Failed to remove image file", e && e.message);
     }
-    
-    // Remove from local DB array (if exists)
-    if (localPlant) {
-      const localImgIdx = (localPlant.images || []).findIndex((i) => i.id === imgId);
-      if (localImgIdx !== -1) {
-        localPlant.images.splice(localImgIdx, 1);
-      }
-      
-      // If plant has no images left, remove the plant entirely from local DB
-      if (!localPlant.images || localPlant.images.length === 0) {
-        const pIdx = db.plants.findIndex((pp) => pp.id === plant.id);
-        if (pIdx !== -1) db.plants.splice(pIdx, 1);
-      }
-    }
-    
-    // If plant has no images left, also delete from Supabase
+    // remove from array
+    plant.images.splice(imgIdx, 1);
+    // if plant has no images left, remove the plant entirely
     if (!plant.images || plant.images.length === 0) {
-      try {
-        const { error: plantError } = await supabase
-          .from('plants')
-          .delete()
-          .eq('id', id);
-        
-        if (plantError) {
-          console.error("❌ Error deleting plant from Supabase:", plantError.message);
-        } else {
-          console.log("✅ Deleted plant from Supabase (no images left):", id);
-        }
-      } catch (supabaseErr) {
-        console.error("⚠️  Supabase plant delete failed:", supabaseErr.message);
-      }
+      const pIdx = db.plants.findIndex((pp) => pp.id === plant.id);
+      if (pIdx !== -1) db.plants.splice(pIdx, 1);
     }
-    
-    // Persist local DB
+    // persist
     writeDB(db);
     return res.json({ success: true, plant });
   } catch (e) {
@@ -3443,112 +2684,35 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
 });
 
 // Delete an image for a flower (mirror the plants route)
-app.delete("/flowers/:id/images/:imgId", async (req, res) => {
+app.delete("/flowers/:id/images/:imgId", (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /flowers/:id/images/:imgId", { id, imgId });
-    
-    // Try to get flower from Supabase first, then local DB
-    let flower = await getFlowerById(id);
-    if (!flower) {
-      return res.status(404).json({ error: "Flower not found" });
-    }
-    
-    // Also check local DB for image reference (for file deletion)
     const db = readDB();
     db.flowers = db.flowers || [];
-    const localFlower = db.flowers.find((p) => p.id === id);
-    
-    // Find image in flower's images array
+    const flower = db.flowers.find((p) => p.id === id);
+    if (!flower) return res.status(404).json({ error: "Flower not found" });
     const imgIdx = (flower.images || []).findIndex((i) => i.id === imgId);
-    if (imgIdx === -1) {
+    if (imgIdx === -1)
       return res.status(404).json({ error: "Image not found" });
-    }
     const img = flower.images[imgIdx];
-    
-    // Also check local DB for image reference (for file deletion)
-    const localImg = localFlower ? (localFlower.images || []).find((i) => i.id === imgId) : null;
     console.log("[DELETE] found flower image", {
       filename: img.filename,
       imgId: img.id,
     });
-    
-    // Delete from Supabase first
     try {
-      // Delete image from Supabase
-      const { error: imgError } = await supabase
-        .from('images')
-        .delete()
-        .eq('id', imgId)
-        .eq('flower_id', id);
-      
-      if (imgError) {
-        console.error("❌ Error deleting image from Supabase:", imgError.message);
-      } else {
-        console.log("✅ Deleted image from Supabase:", imgId);
-      }
-      
-      // Delete related conversations
-      const { error: convError } = await supabase
-        .from('conversations')
-        .delete()
-        .eq('image_id', imgId);
-      
-      if (convError) {
-        console.error("❌ Error deleting conversations from Supabase:", convError.message);
-      } else {
-        console.log("✅ Deleted conversations from Supabase for image:", imgId);
-      }
-    } catch (supabaseErr) {
-      console.error("⚠️  Supabase delete failed (non-blocking):", supabaseErr.message);
-    }
-    
-    // Remove file if exists (use filename from image object)
-    try {
-      const filenameToDelete = (localImg || img).filename || img.filename;
-      const full = path.join(UPLOAD_DIR, filenameToDelete);
+      const full = path.join(UPLOAD_DIR, img.filename);
       console.log("[DELETE] attempting unlink", full);
-      if (fs.existsSync(full)) {
-        fs.unlinkSync(full);
-        console.log("[DELETE] file removed", full);
-      }
+      if (fs.existsSync(full)) fs.unlinkSync(full);
+      console.log("[DELETE] file removed", full);
     } catch (e) {
       console.warn("Failed to remove image file", e && e.message);
     }
-    
-    // Remove from local DB array (if exists)
-    if (localFlower) {
-      const localImgIdx = (localFlower.images || []).findIndex((i) => i.id === imgId);
-      if (localImgIdx !== -1) {
-        localFlower.images.splice(localImgIdx, 1);
-      }
-      
-      // If flower has no images left, remove the flower entirely from local DB
-      if (!localFlower.images || localFlower.images.length === 0) {
-        const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
-        if (pIdx !== -1) db.flowers.splice(pIdx, 1);
-      }
-    }
-    
-    // If flower has no images left, also delete from Supabase
+    flower.images.splice(imgIdx, 1);
     if (!flower.images || flower.images.length === 0) {
-      try {
-        const { error: flowerError } = await supabase
-          .from('flowers')
-          .delete()
-          .eq('id', id);
-        
-        if (flowerError) {
-          console.error("❌ Error deleting flower from Supabase:", flowerError.message);
-        } else {
-          console.log("✅ Deleted flower from Supabase (no images left):", id);
-        }
-      } catch (supabaseErr) {
-        console.error("⚠️  Supabase flower delete failed:", supabaseErr.message);
-      }
+      const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
+      if (pIdx !== -1) db.flowers.splice(pIdx, 1);
     }
-    
-    // Persist local DB
     writeDB(db);
     return res.json({ success: true, flower });
   } catch (e) {
@@ -3575,139 +2739,27 @@ app.post("/admin/prune-empty-plants", (req, res) => {
 });
 
 // Admin: clear all data and delete uploads (destructive). Protected by invite token if configured.
-// Clear all data from both Supabase and local DB
-app.post("/admin/clear-all", requireToken, async (req, res) => {
+app.post("/admin/clear-all", requireToken, (req, res) => {
   try {
-    console.log("🗑️  Starting complete data cleanup...");
-    
-    // 1. Delete from Supabase (in correct order due to foreign keys)
+    // delete upload files
     try {
-      console.log("🗑️  Deleting from Supabase...");
-      await supabase.from('care_history').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-      await supabase.from('conversations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('images').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('flowers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('plants').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      console.log("✅ Supabase data deleted");
-    } catch (supabaseErr) {
-      console.error("⚠️  Supabase deletion error:", supabaseErr.message);
-      // Continue with local cleanup
-    }
-    
-    // 2. Delete all files from Supabase Storage (recursively)
-    try {
-      console.log("🗑️  Deleting files from Supabase Storage...");
-      
-      // Function to recursively list and delete all files
-      async function deleteAllFiles(folder = '') {
-        const { data: files, error: listError } = await supabase.storage
-          .from('images')
-          .list(folder, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
-        
-        if (listError) {
-          console.error(`⚠️  Error listing folder ${folder}:`, listError.message);
-          return [];
-        }
-        
-        if (!files || files.length === 0) {
-          return [];
-        }
-        
-        const filePaths = [];
-        const folderPaths = [];
-        
-        for (const file of files) {
-          const fullPath = folder ? `${folder}/${file.name}` : file.name;
-          if (file.id) {
-            // It's a file
-            filePaths.push(fullPath);
-          } else {
-            // It's a folder, recurse
-            folderPaths.push(fullPath);
-          }
-        }
-        
-        // Delete files in current folder
-        if (filePaths.length > 0) {
-          const { error: deleteError } = await supabase.storage
-            .from('images')
-            .remove(filePaths);
-          
-          if (deleteError) {
-            console.error(`⚠️  Error deleting files in ${folder}:`, deleteError.message);
-          } else {
-            console.log(`✅ Deleted ${filePaths.length} files from ${folder || 'root'}`);
-          }
-        }
-        
-        // Recurse into subfolders
-        for (const folderPath of folderPaths) {
-          await deleteAllFiles(folderPath);
-        }
-        
-        return filePaths;
-      }
-      
-      const deletedFiles = await deleteAllFiles('');
-      console.log(`✅ Total deleted from Supabase Storage: ${deletedFiles.length} files`);
-    } catch (storageErr) {
-      console.error("⚠️  Storage cleanup error:", storageErr.message);
-    }
-    
-    // 2b. Delete all files from Firebase Storage (if it exists)
-    if (bucket) {
-      try {
-        console.log("🗑️  Deleting files from Firebase Storage...");
-        const [firebaseFiles] = await bucket.getFiles();
-        if (firebaseFiles && firebaseFiles.length > 0) {
-          const deletePromises = firebaseFiles.map(file => file.delete());
-          await Promise.all(deletePromises);
-          console.log(`✅ Deleted ${firebaseFiles.length} files from Firebase Storage`);
-        } else {
-          console.log("ℹ️  No files found in Firebase Storage");
-        }
-      } catch (firebaseErr) {
-        console.error("⚠️  Firebase Storage cleanup error:", firebaseErr.message);
-      }
-    } else {
-      console.log("ℹ️  Firebase Storage not initialized, skipping");
-    }
-    
-    // 3. Delete local upload files
-    try {
-      console.log("🗑️  Deleting local upload files...");
       const files = fs.readdirSync(UPLOAD_DIR);
-      let deletedCount = 0;
       files.forEach((f) => {
         try {
           fs.unlinkSync(path.join(UPLOAD_DIR, f));
-          deletedCount++;
         } catch (e) {
           console.warn("failed to remove upload", f, e && e.message);
         }
       });
-      console.log(`✅ Deleted ${deletedCount} local files`);
     } catch (e) {
-      console.warn("⚠️  Failed to list/delete local uploads:", e && e.message);
+      console.warn("failed to list uploads", e && e.message);
     }
-    
-    // 4. Reset local DB
-    try {
-      console.log("🗑️  Resetting local DB...");
-      const newDb = { plants: [], flowers: [] };
-      await writeDB(newDb);
-      console.log("✅ Local DB reset");
-    } catch (e) {
-      console.error("⚠️  Local DB reset error:", e.message);
-    }
-    
-    console.log("✅ Complete data cleanup finished");
-    return res.json({ 
-      success: true,
-      message: "All data cleared from Supabase, Storage, and local files"
-    });
+    // reset DB
+    const newDb = { plants: [], flowers: [] };
+    writeDB(newDb);
+    return res.json({ success: true });
   } catch (e) {
-    console.error("❌ clear-all failed", e);
+    console.error("clear-all failed", e);
     return res.status(500).json({ error: e && e.message });
   }
 });
@@ -4009,8 +3061,7 @@ app.post(
 
 app.get("/plants", async (req, res) => {
   try {
-    const owner = req.query.owner;
-    const plants = await getPlants(owner);
+    const plants = await getPlants();
     res.json(Array.isArray(plants) ? plants : Object.values(plants || {}));
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -4018,46 +3069,20 @@ app.get("/plants", async (req, res) => {
 });
 
 // Diagnostic endpoint to check Firebase configuration
-// Diagnostic endpoint to check Supabase configuration
-app.get("/admin/supabase-status", async (req, res) => {
-  try {
-    // Test database connection
-    const { data: plants, error: dbError } = await supabase
-      .from('plants')
-      .select('id')
-      .limit(1);
-    
-    // Test storage connection
-    const { data: buckets, error: storageError } = await supabase.storage.listBuckets();
-    
-    const status = {
-      supabaseUrl: SUPABASE_URL,
-      databaseConnected: !dbError,
-      storageConnected: !storageError,
-      hasServiceKey: !!SUPABASE_SERVICE_KEY,
-      databaseError: dbError?.message || null,
-      storageError: storageError?.message || null,
-      buckets: buckets?.map(b => b.name) || [],
-      status: (!dbError && !storageError) ? "✅ Ready" : "⚠️ Issues detected",
-      message: (!dbError && !storageError) 
-        ? "Supabase is fully configured and working" 
-        : "Check errors above"
-    };
-    res.json(status);
-  } catch (e) {
-    res.status(500).json({ 
-      error: e.message,
-      status: "❌ Configuration error"
-    });
-  }
-});
-
-// Legacy Firebase status endpoint (for backward compatibility)
 app.get("/admin/firebase-status", (req, res) => {
-  res.json({
-    message: "Firebase has been removed. Use /admin/supabase-status instead.",
-    status: "❌ Firebase not configured (migrated to Supabase)"
-  });
+  const status = {
+    firebaseInitialized: !!admin.apps.length,
+    bucketInitialized: !!bucket,
+    bucketName: bucket ? bucket.name : null,
+    credentials: {
+      projectId: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
+      hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+      hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+      hasPrivateKeyId: !!process.env.FIREBASE_PRIVATE_KEY_ID,
+    },
+    status: bucket ? "✅ Ready" : "❌ Not initialized",
+  };
+  res.json(status);
 });
 
 // Check upload directory
@@ -4277,15 +3302,10 @@ app.get("/flowers/:id", async (req, res) => {
 // Flowers endpoints (lightweight parity with plants)
 app.get("/flowers", async (req, res) => {
   try {
-    console.log("🌺 GET /flowers called", { owner: req.query.owner });
-    const owner = req.query.owner;
-    const flowers = await getFlowers(owner);
-    console.log(`✅ Returning ${Array.isArray(flowers) ? flowers.length : 'non-array'} flowers`);
-    const result = Array.isArray(flowers) ? flowers : Object.values(flowers || {});
-    res.json(result);
+    const flowers = await getFlowers();
+    res.json(Array.isArray(flowers) ? flowers : Object.values(flowers || {}));
   } catch (e) {
-    console.error("❌ Error in GET /flowers:", e);
-    res.status(500).json({ error: e.message, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined });
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -4307,7 +3327,7 @@ app.post("/flowers", requireToken, express.json(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () =>
-  console.log(`✅ Server started on port ${PORT} - Supabase migration complete`)
+  console.log(`Server started on port ${PORT}`)
 );
 
 // Informational warning if ElevenLabs TTS is not configured so operators see why /tts/eleven returns 403
@@ -4416,84 +3436,6 @@ app.post("/admin/reset", async (req, res) => {
 });
 
 // Diagnostic: show raw db.json content
-// Admin endpoint to fix existing images with missing URLs
-app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
-  try {
-    console.log("🔧 Fixing image URLs for existing images...");
-    
-    // Get all images with NULL or empty supabase_url
-    const { data: images, error: fetchError } = await supabase
-      .from('images')
-      .select('*')
-      .or('supabase_url.is.null,supabase_url.eq.');
-    
-    // Also check for empty string URLs
-    const { data: emptyUrlImages } = await supabase
-      .from('images')
-      .select('*')
-      .eq('supabase_url', '');
-    
-    // Combine both sets
-    const allImagesNeedingFix = [
-      ...(images || []),
-      ...(emptyUrlImages || [])
-    ].filter((img, index, self) => 
-      index === self.findIndex(i => i.id === img.id)
-    );
-    
-    if (fetchError) {
-      console.error("❌ Error fetching images:", fetchError.message);
-      return res.status(500).json({ error: fetchError.message });
-    }
-    
-    if (!allImagesNeedingFix || allImagesNeedingFix.length === 0) {
-      return res.json({ 
-        success: true, 
-        message: "No images need fixing - all images have URLs",
-        fixed: 0 
-      });
-    }
-    
-    console.log(`📋 Found ${allImagesNeedingFix.length} images without URLs, fixing...`);
-    
-    let fixedCount = 0;
-    const backendUrl = 'https://plant-app-backend-h28h.onrender.com';
-    
-    // Update each image with a fallback URL
-    for (const img of allImagesNeedingFix) {
-      if (!img.filename) {
-        console.warn(`⚠️  Image ${img.id} has no filename, skipping`);
-        continue;
-      }
-      
-      // Create fallback URL using local /uploads/ path
-      const fallbackUrl = `${backendUrl}/uploads/${img.filename}`;
-      
-      const { error: updateError } = await supabase
-        .from('images')
-        .update({ supabase_url: fallbackUrl })
-        .eq('id', img.id);
-      
-      if (updateError) {
-        console.error(`❌ Error updating image ${img.id}:`, updateError.message);
-      } else {
-        console.log(`✅ Fixed image ${img.id}: ${fallbackUrl}`);
-        fixedCount++;
-      }
-    }
-    
-    return res.json({ 
-      success: true, 
-      message: `Fixed ${fixedCount} out of ${allImagesNeedingFix.length} images`,
-      fixed: fixedCount,
-      total: allImagesNeedingFix.length
-    });
-  } catch (e) {
-    console.error("❌ Fix image URLs failed:", e);
-    return res.status(500).json({ error: e.message || String(e) });
-  }
-});
-
 app.get("/admin/db-content", async (req, res) => {
   try {
     const db = await readDB();
