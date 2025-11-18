@@ -1,24 +1,32 @@
-# Minimal Dockerfile for Render (but render.yaml is preferred)
-FROM node:20-alpine
+# Build stage
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 
-# Install dependencies with security audit
-RUN npm install --production && npm audit fix
+RUN npm install --production --audit-level=moderate && \
+    npm cache clean --force && \
+    npm audit fix --audit-level=moderate || true
+
+# Runtime stage - distroless for minimal attack surface
+FROM gcr.io/distroless/nodejs22-debian12
+
+WORKDIR /app
+
+# Copy only necessary files from builder
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy app files
 COPY server.js ./
 COPY public ./public
 
-# Create directories for persistent disks (mounted by Render)
+# Create app data directories
 RUN mkdir -p /app/data /app/uploads
 
 # Expose port
 EXPOSE 8080
 
 # Start server
-CMD ["node", "server.js"]
+CMD ["server.js"]
 
