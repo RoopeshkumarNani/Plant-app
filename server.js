@@ -17,7 +17,8 @@ const { createClient } = require("@supabase/supabase-js");
 // Initialize Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL || "https://yvpoabomcnwegjvfwtav.supabase.co",
-  process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY"
+  process.env.SUPABASE_ANON_KEY ||
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cG9hYm9tY253ZWdqdmZ3dGF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTg0OTcsImV4cCI6MjA3ODgzNDQ5N30.uGZx7pysf0lwkBT7UeoWV0Hwg42BOz5QtKF_j6ec3EY"
 );
 console.log("✅ Supabase client initialized");
 
@@ -63,8 +64,12 @@ const db = admin.database();
 let bucket = null;
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   try {
-    const bucketName = `${process.env.FIREBASE_PROJECT_ID || "my-soulmates"}.appspot.com`;
-    console.log(`🔧 Attempting to initialize Firebase Storage bucket: ${bucketName}`);
+    const bucketName = `${
+      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+    }.appspot.com`;
+    console.log(
+      `🔧 Attempting to initialize Firebase Storage bucket: ${bucketName}`
+    );
     bucket = admin.storage().bucket(bucketName);
     console.log("✅ Firebase Storage bucket initialized");
     console.log("📍 Bucket name:", bucket.name);
@@ -74,30 +79,34 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
     bucket = null;
   }
 } else {
-  console.warn("⚠️  Firebase credentials incomplete - Storage uploads disabled");
-  if (!process.env.FIREBASE_PRIVATE_KEY) console.warn("  - FIREBASE_PRIVATE_KEY not set");
-  if (!process.env.FIREBASE_CLIENT_EMAIL) console.warn("  - FIREBASE_CLIENT_EMAIL not set");
+  console.warn(
+    "⚠️  Firebase credentials incomplete - Storage uploads disabled"
+  );
+  if (!process.env.FIREBASE_PRIVATE_KEY)
+    console.warn("  - FIREBASE_PRIVATE_KEY not set");
+  if (!process.env.FIREBASE_CLIENT_EMAIL)
+    console.warn("  - FIREBASE_CLIENT_EMAIL not set");
 }
 
 // Function to upload file to Supabase Storage
 async function uploadFileToSupabaseStorage(fileBuffer, filename) {
   try {
     console.log(`📤 Uploading to Supabase Storage: ${filename}`);
-    
+
     const { data, error } = await supabase.storage
       .from("images")
       .upload(filename, fileBuffer, {
         contentType: "image/jpeg",
-        upsert: false
+        upsert: false,
       });
-    
+
     if (error) throw error;
-    
+
     // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from("images")
-      .getPublicUrl(filename);
-    
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("images").getPublicUrl(filename);
+
     console.log("✅ Image uploaded to Supabase Storage:", publicUrl);
     return publicUrl;
   } catch (error) {
@@ -111,25 +120,32 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
 async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
   if (!bucket) {
     console.error("❌ Firebase Storage not available - bucket is null");
-    console.error("   This means Firebase credentials were not properly initialized");
+    console.error(
+      "   This means Firebase credentials were not properly initialized"
+    );
     return null;
   }
   try {
     let fileBuffer;
     let fileSourceDesc = "";
-    
+
     // Handle both file paths and buffers
     if (typeof filePathOrBuffer === "string") {
       const localFilePath = filePathOrBuffer;
-      console.log(`📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`);
-      
+      console.log(
+        `📤 Starting Firebase upload: ${localFilePath} → ${destinationPath}`
+      );
+
       // Verify file exists
       if (!fs.existsSync(localFilePath)) {
         console.error(`❌ Local file does not exist: ${localFilePath}`);
         console.error(`   Current working directory: ${process.cwd()}`);
         console.error(`   UPLOAD_DIR: ${UPLOAD_DIR}`);
         try {
-          console.error(`   Contents of ${UPLOAD_DIR}:`, fs.readdirSync(UPLOAD_DIR).slice(0, 5));
+          console.error(
+            `   Contents of ${UPLOAD_DIR}:`,
+            fs.readdirSync(UPLOAD_DIR).slice(0, 5)
+          );
         } catch (e) {
           console.error(`   Could not list ${UPLOAD_DIR}:`, e.message);
         }
@@ -142,21 +158,25 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
     } else if (Buffer.isBuffer(filePathOrBuffer)) {
       fileBuffer = filePathOrBuffer;
       fileSourceDesc = "buffer";
-      console.log(`📤 Starting Firebase upload from buffer (size: ${fileBuffer.length} bytes) → ${destinationPath}`);
+      console.log(
+        `📤 Starting Firebase upload from buffer (size: ${fileBuffer.length} bytes) → ${destinationPath}`
+      );
     } else {
-      console.error(`❌ Invalid file input: expected string or Buffer, got ${typeof filePathOrBuffer}`);
+      console.error(
+        `❌ Invalid file input: expected string or Buffer, got ${typeof filePathOrBuffer}`
+      );
       return null;
     }
 
     // Upload with explicit error handling
     console.log(`   Uploading ${fileSourceDesc} to Firebase...`);
     console.log(`   Bucket object:`, { name: bucket.name });
-    
+
     try {
       // For string paths, verify file exists
       let uploadPath = filePathOrBuffer;
       let tempFile = null;
-      
+
       if (typeof filePathOrBuffer !== "string") {
         // Buffer case: write to temp file first
         tempFile = path.join(UPLOAD_DIR, `temp-${Date.now()}.jpg`);
@@ -164,17 +184,19 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
         uploadPath = tempFile;
         console.log(`   Buffer written to temp file: ${tempFile}`);
       }
-      
+
       // Verify file exists before upload
       if (!fs.existsSync(uploadPath)) {
         throw new Error(`Upload file does not exist: ${uploadPath}`);
       }
-      console.log(`   File exists, size: ${fs.statSync(uploadPath).size} bytes`);
+      console.log(
+        `   File exists, size: ${fs.statSync(uploadPath).size} bytes`
+      );
       console.log(`   Uploading file from: ${uploadPath}`);
-      
+
       // Try simpler direct upload using the file object
       const file = bucket.file(destinationPath);
-      
+
       // Upload using the saveAs method on the file
       await file.save(fs.readFileSync(uploadPath), {
         metadata: {
@@ -183,9 +205,9 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
         },
         public: true,
       });
-      
+
       console.log("✅ File uploaded to Firebase Storage successfully");
-      
+
       // Clean up temp file if we created one
       if (tempFile) {
         try {
@@ -195,7 +217,7 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
           console.warn("   Could not delete temp file:", e.message);
         }
       }
-      
+
       // Return public URL
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
       console.log("✅ Firebase Storage URL generated:", publicUrl);
@@ -286,7 +308,7 @@ async function updateFlower(id, updates) {
 async function getPlantById(id) {
   try {
     const db = await readDB();
-    return (db.plants || []).find(p => p.id === id) || null;
+    return (db.plants || []).find((p) => p.id === id) || null;
   } catch (e) {
     console.error("Error reading plant:", e.message);
     return null;
@@ -296,7 +318,7 @@ async function getPlantById(id) {
 async function getFlowerById(id) {
   try {
     const db = await readDB();
-    return (db.flowers || []).find(f => f.id === id) || null;
+    return (db.flowers || []).find((f) => f.id === id) || null;
   } catch (e) {
     console.error("Error reading flower:", e.message);
     return null;
@@ -355,9 +377,10 @@ async function syncDBToFirebase(dbData) {
 }
 
 // Define directories BEFORE error handlers that use them
-const UPLOAD_DIR = process.env.NODE_ENV === 'production' 
-  ? '/app/uploads' 
-  : path.join(__dirname, "uploads");
+const UPLOAD_DIR =
+  process.env.NODE_ENV === "production"
+    ? "/app/uploads"
+    : path.join(__dirname, "uploads");
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
@@ -462,16 +485,20 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, "public")));
 
 // Optimize image serving: cache and set proper headers
-app.use("/uploads", (req, res, next) => {
-  // Set cache headers for images (1 month)
-  res.set({
-    "Cache-Control": "public, max-age=2592000, immutable"
-  });
-  next();
-}, express.static(UPLOAD_DIR, {
-  maxAge: "1d",
-  etag: false
-}));
+app.use(
+  "/uploads",
+  (req, res, next) => {
+    // Set cache headers for images (1 month)
+    res.set({
+      "Cache-Control": "public, max-age=2592000, immutable",
+    });
+    next();
+  },
+  express.static(UPLOAD_DIR, {
+    maxAge: "1d",
+    etag: false,
+  })
+);
 
 app.use(express.json());
 
@@ -521,61 +548,89 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Database functions - use Supabase for plants and flowers
+// Database functions - use Supabase for plants and flowers with fallback to local JSON
+const USE_SUPABASE = process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY;
+
 async function readDB() {
   try {
-    // Fetch plants from Supabase
+    if (!USE_SUPABASE) {
+      // Fallback to local JSON file
+      const dbPath = process.env.NODE_ENV === 'production' 
+        ? "/app/data/db.json"
+        : path.join(__dirname, "data", "db.json");
+      
+      if (!fs.existsSync(dbPath)) {
+        console.log("DB file not found - returning empty");
+        return { plants: [], flowers: [] };
+      }
+      const content = fs.readFileSync(dbPath, "utf-8");
+      return JSON.parse(content);
+    }
+
+    // Fetch from Supabase
     const { data: plants, error: plantsError } = await supabase
-      .from('plants')
-      .select('*');
-    
-    // Fetch flowers from Supabase
+      .from("plants")
+      .select("*");
+
     const { data: flowers, error: flowersError } = await supabase
-      .from('flowers')
-      .select('*');
-    
+      .from("flowers")
+      .select("*");
+
     if (plantsError || flowersError) {
-      console.error("Error reading from Supabase:", plantsError?.message || flowersError?.message);
+      console.error(
+        "Error reading from Supabase:",
+        plantsError?.message || flowersError?.message
+      );
       return { plants: [], flowers: [] };
     }
-    
+
     return {
       plants: plants || [],
-      flowers: flowers || []
+      flowers: flowers || [],
     };
   } catch (e) {
-    console.error("Error reading DB from Supabase:", e.message);
+    console.error("Error reading DB:", e.message);
     return { plants: [], flowers: [] };
   }
 }
 
 async function writeDB(obj) {
   try {
-    // Clear and rewrite plants
+    if (!USE_SUPABASE) {
+      // Fallback to local JSON file
+      const dbPath = process.env.NODE_ENV === 'production'
+        ? "/app/data/db.json"
+        : path.join(__dirname, "data", "db.json");
+      
+      const dataDir = path.dirname(dbPath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
+      console.log("✅ Database saved to local file");
+      return;
+    }
+
+    // Clear and rewrite to Supabase
     if (obj.plants && Array.isArray(obj.plants)) {
-      await supabase.from('plants').delete().neq('id', '');  // Delete all
+      await supabase.from("plants").delete().neq("id", ""); // Delete all
       for (const plant of obj.plants) {
-        const { error } = await supabase
-          .from('plants')
-          .insert([plant]);
+        const { error } = await supabase.from("plants").insert([plant]);
         if (error) console.error("Error inserting plant:", error.message);
       }
     }
-    
-    // Clear and rewrite flowers
+
     if (obj.flowers && Array.isArray(obj.flowers)) {
-      await supabase.from('flowers').delete().neq('id', '');  // Delete all
+      await supabase.from("flowers").delete().neq("id", ""); // Delete all
       for (const flower of obj.flowers) {
-        const { error } = await supabase
-          .from('flowers')
-          .insert([flower]);
+        const { error } = await supabase.from("flowers").insert([flower]);
         if (error) console.error("Error inserting flower:", error.message);
       }
     }
-    
+
     console.log("✅ Database saved to Supabase");
   } catch (e) {
-    console.error("Error writing DB to Supabase:", e.message);
+    console.error("Error writing DB:", e.message);
     throw e;
   }
 }
@@ -1522,7 +1577,7 @@ async function callOpenAIChat(messages) {
 
 function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
   const name = nickname || species || "a plant";
-  
+
   // More diverse and natural openers - avoid repetitive patterns
   const openerOptions = [
     `Hey! It's ${name} here.`,
@@ -1533,7 +1588,8 @@ function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
     `${name}, at your service!`,
     `Hello from ${name}!`,
   ];
-  const opener = openerOptions[Math.floor(Math.random() * openerOptions.length)];
+  const opener =
+    openerOptions[Math.floor(Math.random() * openerOptions.length)];
 
   // context from lastImage if available
   let area = null;
@@ -1561,17 +1617,29 @@ function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
       hints.push("I'm really happy with how things are going.");
     }
   }
-  
+
   // Growth feedback
   if (growthDelta != null) {
     if (growthDelta > 0.15) {
-      hints.push(`I've grown about ${Math.round(growthDelta * 100)}% — this is awesome!`);
-      hints.push(`Wow, I'm ${Math.round(growthDelta * 100)}% bigger! You're doing great!`);
+      hints.push(
+        `I've grown about ${Math.round(growthDelta * 100)}% — this is awesome!`
+      );
+      hints.push(
+        `Wow, I'm ${Math.round(growthDelta * 100)}% bigger! You're doing great!`
+      );
     } else if (growthDelta > 0.05) {
-      hints.push(`I've grown ${Math.round(growthDelta * 100)}% since you last saw me.`);
-      hints.push(`You'll notice I'm a bit bigger — about ${Math.round(growthDelta * 100)}% more!`);
+      hints.push(
+        `I've grown ${Math.round(growthDelta * 100)}% since you last saw me.`
+      );
+      hints.push(
+        `You'll notice I'm a bit bigger — about ${Math.round(
+          growthDelta * 100
+        )}% more!`
+      );
     } else if (growthDelta < -0.1) {
-      hints.push("I seem smaller than before — I might need more light or water.");
+      hints.push(
+        "I seem smaller than before — I might need more light or water."
+      );
       hints.push("I've shrunk a bit... maybe something needs adjusting?");
     } else if (growthDelta < -0.03) {
       hints.push("I'm pretty much the same size — steady as she goes!");
@@ -1595,8 +1663,9 @@ function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
   const pick = [];
   if (hints.length) pick.push(hints[Math.floor(Math.random() * hints.length)]);
   if (hints.length > 2 && Math.random() > 0.5) {
-    const remaining = hints.filter(h => h !== pick[0]);
-    if (remaining.length) pick.push(remaining[Math.floor(Math.random() * remaining.length)]);
+    const remaining = hints.filter((h) => h !== pick[0]);
+    if (remaining.length)
+      pick.push(remaining[Math.floor(Math.random() * remaining.length)]);
   }
 
   // Varied closing that invites interaction
@@ -1625,39 +1694,47 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         error: 'No file uploaded (field name must be "photo")',
       });
     console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
-    
+
     // Read file into buffer immediately to ensure it's available for background processing
     // This prevents issues if the file gets deleted from ephemeral storage later
     let fileBuffer = null;
     try {
       fileBuffer = fs.readFileSync(file.path);
       console.log("✅ File read into memory buffer, size:", fileBuffer.length);
-      
+
       // Compress image to reduce file size (improves loading speed)
       try {
         fileBuffer = await sharp(fileBuffer)
-          .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+          .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
           .jpeg({ quality: 85, progressive: true })
           .toBuffer();
-        console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
-        
+        console.log(
+          "✅ Image compressed, new size:",
+          fileBuffer.length,
+          "bytes"
+        );
+
         // Write compressed image back to disk
         fs.writeFileSync(file.path, fileBuffer);
       } catch (compressErr) {
-        console.warn("⚠️  Image compression failed (continuing with original):", compressErr.message);
+        console.warn(
+          "⚠️  Image compression failed (continuing with original):",
+          compressErr.message
+        );
       }
     } catch (e) {
       console.warn("⚠️  Could not read file into buffer:", e.message);
       // Continue anyway - we can still try to use the file path
     }
-    
+
     const { species, nickname, plantId, subjectType, subjectId, owner } =
       req.body;
     const db = await readDB();
 
     // Fast-path: create minimal image entry and placeholder message, persist quickly
     let subjectCollection = "plants";
-    if (subjectType && (subjectType === "flower" || subjectType === "flowers")) subjectCollection = "flowers";
+    if (subjectType && (subjectType === "flower" || subjectType === "flowers"))
+      subjectCollection = "flowers";
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
 
@@ -1682,7 +1759,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     } else {
       // When subjectType is provided, only match/create inside that collection.
       // If no subjectType provided, default to plants (legacy behavior).
-      const requestedType = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
+      const requestedType =
+        subjectType === "flower" || subjectType === "flowers"
+          ? "flowers"
+          : "plants";
       db[requestedType] = db[requestedType] || [];
 
       // try to match existing subject inside the requested collection by nickname or species
@@ -1739,10 +1819,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       growthDelta: null,
     };
     plant.conversations.push(msgEntry);
-    
+
     // Set firebaseUrl to the public /uploads/ URL
-    imgEntry.firebaseUrl = `${process.env.API_BASE_URL || 'https://plant-app-backend-h28h.onrender.com'}/uploads/${imgEntry.filename}`;
-    
+    imgEntry.firebaseUrl = `${
+      process.env.API_BASE_URL || "https://plant-app-backend-h28h.onrender.com"
+    }/uploads/${imgEntry.filename}`;
+
     // Save to database
     await writeDB(db);
 
@@ -1790,8 +1872,13 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     (async () => {
       try {
         console.log("🔄 Background processing started for image:", imgEntry.id);
-        console.log("   Firebase bucket status - initialized?", !!bucket, "bucket.name:", bucket?.name || "N/A");
-        
+        console.log(
+          "   Firebase bucket status - initialized?",
+          !!bucket,
+          "bucket.name:",
+          bucket?.name || "N/A"
+        );
+
         // Note: Supabase Storage upload already completed synchronously before response
 
         // image analysis
@@ -3091,10 +3178,10 @@ app.get("/admin/upload-status", (req, res) => {
     const uploadDirExists = fs.existsSync(UPLOAD_DIR);
     let files = [];
     let totalSize = 0;
-    
+
     if (uploadDirExists) {
       files = fs.readdirSync(UPLOAD_DIR).slice(0, 20); // First 20 files
-      files.forEach(f => {
+      files.forEach((f) => {
         const filePath = path.join(UPLOAD_DIR, f);
         try {
           totalSize += fs.statSync(filePath).size;
@@ -3103,7 +3190,7 @@ app.get("/admin/upload-status", (req, res) => {
         }
       });
     }
-    
+
     res.json({
       uploadDirPath: UPLOAD_DIR,
       uploadDirExists,
@@ -3122,7 +3209,7 @@ app.get("/admin/test-firebase-upload", async (req, res) => {
     console.log("🧪 Testing Firebase Storage upload");
     console.log("   Bucket initialized?", !!bucket);
     console.log("   Bucket name:", bucket?.name || "N/A");
-    
+
     // First, test if we can list files (permission test)
     if (bucket) {
       try {
@@ -3133,24 +3220,24 @@ app.get("/admin/test-firebase-upload", async (req, res) => {
         console.warn("⚠️  Bucket read permission test failed:", e.message);
       }
     }
-    
+
     // Create a simple test file
     const testFilePath = path.join(__dirname, "test-file.txt");
     fs.writeFileSync(testFilePath, "Test content for Firebase Storage");
-    
+
     console.log("🧪 Attempting Firebase Storage upload with test file");
     const firebaseUrl = await uploadFileToFirebaseStorage(
       testFilePath,
       "test/test-file.txt"
     );
-    
+
     // Clean up
     try {
       fs.unlinkSync(testFilePath);
     } catch (e) {
       // ignore
     }
-    
+
     if (firebaseUrl) {
       res.json({
         success: true,
@@ -3160,7 +3247,8 @@ app.get("/admin/test-firebase-upload", async (req, res) => {
     } else {
       res.json({
         success: false,
-        message: "Firebase Storage upload failed - check server logs for details",
+        message:
+          "Firebase Storage upload failed - check server logs for details",
         bucketStatus: {
           initialized: !!bucket,
           name: bucket?.name,
@@ -3412,13 +3500,13 @@ app.post("/tts/eleven", requireToken, express.json(), async (req, res) => {
 app.post("/admin/reset", async (req, res) => {
   try {
     const dbPath = path.join(__dirname, "data", "db.json");
-    
+
     // Force delete the file if it exists
     if (fs.existsSync(dbPath)) {
       fs.unlinkSync(dbPath);
       console.log("✅ Database file deleted");
     }
-    
+
     const emptyDb = { plants: [], flowers: [] };
 
     // Clear database
@@ -3442,8 +3530,8 @@ app.get("/admin/db-content", async (req, res) => {
     res.json({
       plantsCount: (db.plants || []).length,
       flowersCount: (db.flowers || []).length,
-      plantIds: (db.plants || []).map(p => p.id),
-      flowerIds: (db.flowers || []).map(f => f.id)
+      plantIds: (db.plants || []).map((p) => p.id),
+      flowerIds: (db.flowers || []).map((f) => f.id),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -3456,19 +3544,19 @@ app.get("/disk-status", (req, res) => {
     const uploadDir = UPLOAD_DIR;
     const testFile = path.join(uploadDir, ".disk-test");
     const timestamp = new Date().toISOString();
-    
+
     // Try to write a test file
     fs.writeFileSync(testFile, `Disk test at ${timestamp}`);
-    
+
     // Try to read it back
-    const content = fs.readFileSync(testFile, 'utf-8');
-    
+    const content = fs.readFileSync(testFile, "utf-8");
+
     // List files in uploads directory
     let files = [];
     if (fs.existsSync(uploadDir)) {
-      files = fs.readdirSync(uploadDir).filter(f => f !== '.disk-test');
+      files = fs.readdirSync(uploadDir).filter((f) => f !== ".disk-test");
     }
-    
+
     res.json({
       diskAvailable: true,
       uploadDir: uploadDir,
@@ -3476,13 +3564,14 @@ app.get("/disk-status", (req, res) => {
       testFileContent: content,
       filesInUploads: files,
       fileCount: files.length,
-      message: "Persistent disk is working if .disk-test file exists after server restart"
+      message:
+        "Persistent disk is working if .disk-test file exists after server restart",
     });
   } catch (e) {
     res.status(500).json({
       diskAvailable: false,
       error: e.message,
-      message: "Cannot write to disk - may be ephemeral storage"
+      message: "Cannot write to disk - may be ephemeral storage",
     });
   }
 });

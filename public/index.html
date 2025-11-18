@@ -16,12 +16,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="/config.js"></script>
     <script>
-      // Fallback API_BASE_URL if config.js didn't load
-      if (typeof API_BASE_URL === 'undefined') {
-        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://plant-app-backend-h28h.onrender.com";
-        console.log("⚠️ Config.js not loaded, using fallback API_BASE_URL:", window.API_BASE_URL);
-      }
+        // Fallback API_BASE_URL if config.js didn't load
+        if (typeof API_BASE_URL === 'undefined') {
+            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://plant-app-backend-h28h.onrender.com";
+            console.log("⚠️ Config.js not loaded, using fallback API_BASE_URL:", window.API_BASE_URL);
+        }
     </script>
     <style>
         :root {
@@ -2828,7 +2828,7 @@
                     const img = document.createElement('img');
                     const last = p.images[p.images.length - 1];
                     const imageUrl = last ? getImageUrl(last) + '?t=' + Date.now() : '';
-                    
+
                     // Use lazy loading: store URL in data-src, show placeholder in src
                     if (imageUrl) {
                         img.dataset.src = imageUrl;
@@ -2908,7 +2908,7 @@
                 const filterAll = document.getElementById('filter-all');
                 if (filterAll) filterAll.textContent = 'All Plants';
             }
-            
+
             // Initialize lazy loading for images
             initLazyLoading();
         }
@@ -2943,7 +2943,7 @@
                     const img = document.createElement('img');
                     const last = p.images && p.images.length ? p.images[p.images.length - 1] : null;
                     const imageUrl = last ? getImageUrl(last) + '?t=' + Date.now() : '';
-                    
+
                     // Use lazy loading
                     if (imageUrl) {
                         img.dataset.src = imageUrl;
@@ -2983,7 +2983,7 @@
                 const filterAll = document.getElementById('filter-all');
                 if (filterAll) filterAll.textContent = 'All Flowers';
             }
-            
+
             // Initialize lazy loading for images
             initLazyLoading();
         }
@@ -3054,7 +3054,7 @@
         let imageObserver = null;
         function initLazyLoading() {
             if (imageObserver) imageObserver.disconnect();
-            
+
             imageObserver = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting && entry.target.dataset.src) {
@@ -3065,7 +3065,7 @@
                     }
                 });
             }, { rootMargin: '100px' }); // Start loading 100px before visible
-            
+
             // Observe all images with data-src
             document.querySelectorAll('img[data-src]').forEach(img => {
                 imageObserver.observe(img);

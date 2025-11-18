@@ -1,26 +1,18 @@
-# Build stage
-FROM node:22-alpine AS builder
+# Simple Node.js Alpine image with security best practices
+FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-
-RUN npm install --production --audit-level=moderate && \
-    npm cache clean --force && \
-    npm audit fix --audit-level=moderate || true
-
-# Create app directories in builder
+# Create app directories first
 RUN mkdir -p /app/data /app/uploads
 
-# Runtime stage - distroless for minimal attack surface
-FROM gcr.io/distroless/nodejs22-debian12
+# Copy package files
+COPY package*.json ./
 
-WORKDIR /app
-
-# Copy only necessary files from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/data ./data
-COPY --from=builder /app/uploads ./uploads
+# Install dependencies with security updates
+RUN npm install --production && \
+    npm cache clean --force && \
+    npm audit fix || true
 
 # Copy app files
 COPY server.js ./
@@ -30,5 +22,5 @@ COPY public ./public
 EXPOSE 8080
 
 # Start server
-CMD ["server.js"]
+CMD ["node", "server.js"]
 
