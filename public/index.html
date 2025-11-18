@@ -15,6 +15,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="/config.js"></script>
+    <script>
+      // Fallback API_BASE_URL if config.js didn't load
+      if (typeof API_BASE_URL === 'undefined') {
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://plant-app-backend-h28h.onrender.com";
+        console.log("⚠️ Config.js not loaded, using fallback API_BASE_URL:", window.API_BASE_URL);
+      }
+    </script>
     <style>
         :root {
             --bg: #f4fbf6;
@@ -2825,7 +2833,6 @@
                     if (imageUrl) {
                         img.dataset.src = imageUrl;
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/></svg>';
-                        img.onerror = () => handleImageError(img);
                     } else {
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
                     }
@@ -2909,25 +2916,9 @@
         // Flowers loader re-uses the same rendering as plants but fetches /flowers
         async function loadFlowers() {
             try {
-                console.log('🌺 Loading flowers...');
                 const res = await fetchWithFallback('/flowers');
-                
-                if (!res.ok) {
-                    console.error('❌ Failed to load flowers:', res.status, res.statusText);
-                    const errorText = await res.text().catch(() => 'Unknown error');
-                    console.error('Error details:', errorText);
-                    const container = document.getElementById('plants');
-                    if (container) container.innerHTML = '<div class="small">Error loading flowers. Please refresh the page.</div>';
-                    return;
-                }
-                
                 const data = await res.json();
-                console.log('✅ Loaded flowers:', Array.isArray(data) ? data.length : 'not an array', data);
                 const container = document.getElementById('plants');
-                if (!container) {
-                    console.error('❌ Container #plants not found');
-                    return;
-                }
                 container.innerHTML = '';
 
                 // Update filter label when loading flowers
@@ -2936,9 +2927,7 @@
                     filterAll.textContent = 'All Flowers';
                 }
 
-                // Handle both array and object responses
-                const flowersArray = Array.isArray(data) ? data : (data.flowers || []);
-                let visible = (flowersArray || []).filter(p => p.images && p.images.length > 0);
+                let visible = (data || []).filter(p => p.images && p.images.length > 0);
 
                 // Apply owner filter
                 if (currentOwnerFilter !== 'all') {
@@ -3040,22 +3029,10 @@
         function getImageUrl(imageOrFilename) {
             if (!imageOrFilename) return '';
 
-            // Check for Supabase Storage URL first (new system)
-            if (typeof imageOrFilename === 'object' && imageOrFilename.url) {
-                console.log('✅ Using Supabase URL:', imageOrFilename.url);
-                return imageOrFilename.url;
-            }
-
-            // If it's an object with firebaseUrl, use that (legacy)
+            // If it's an object with firebaseUrl, use that first (persistent storage)
             if (typeof imageOrFilename === 'object' && imageOrFilename.firebaseUrl) {
-                // Check if it's a valid URL (not broken)
-                const url = imageOrFilename.firebaseUrl;
-                if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-                    console.log('✅ Using Firebase URL:', url);
-                    return url;
-                } else {
-                    console.warn('⚠️  Invalid Firebase URL, falling back to filename');
-                }
+                console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
+                return imageOrFilename.firebaseUrl;
             }
 
             // Otherwise extract filename  
@@ -3071,14 +3048,6 @@
             const url = '/uploads/' + filename;
             console.log('📸 Image URL (fallback):', url);
             return url;
-        }
-        
-        // Add error handler for broken images
-        function handleImageError(img) {
-            console.warn('❌ Image failed to load:', img.src);
-            // Replace with placeholder
-            img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999" font-size="14">Image not found</text></svg>';
-            img.style.opacity = '0.5';
         }
 
         // Lazy loading for images - only load when visible on screen
@@ -3449,8 +3418,7 @@
                     p.images.forEach(img => {
                         const el = document.createElement('div'); el.className = 'msg';
                         // Render image without exposed uploadedAt metadata (keeps data in DB but not shown)
-                        const imgUrl = getImageUrl(img) + '?t=' + Date.now();
-                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${imgUrl}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo' onerror='this.style.opacity="0.3"; this.alt="Image not found";'></div>`;
+                        el.innerHTML = `<div><img data-fn='${img.filename}' src='${getImageUrl(img)}?t=${Date.now()}' data-imgid='${img.id}' style='max-width:160px; max-height:140px; border-radius:8px; cursor:pointer; opacity:0.01' title='Click to focus replies on this photo'></div>`;
                         msgs.appendChild(el);
                         try {
                             const imgEl = el.querySelector('img[data-imgid]');
@@ -3533,41 +3501,15 @@
                                 // Try plants delete first, if 404 then try flowers delete
                                 let url = baseUrl + `/plants/${p.id}/images/${imgId}`;
                                 console.log('DELETE request URL:', url);
-                                // Add token if available
-                                const delOpts = { method: 'DELETE' };
-                                if (typeof INVITE_TOKEN !== 'undefined' && INVITE_TOKEN) {
-                                    delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
-                                }
-                                
-                                let r = await fetch(url, delOpts);
+                                let r = await fetch(url, { method: 'DELETE' });
                                 if (!r.ok && r.status === 404) {
                                     // try flowers
                                     url = baseUrl + `/flowers/${p.id}/images/${imgId}`;
                                     console.log('Fallback DELETE request URL:', url);
-                                    r = await fetch(url, delOpts);
+                                    r = await fetch(url, { method: 'DELETE' });
                                 }
-                                
-                                // Try to parse as JSON first, fallback to text
-                                let errorMsg = '';
-                                try {
-                                    const contentType = r.headers.get('content-type');
-                                    if (contentType && contentType.includes('application/json')) {
-                                        const json = await r.json();
-                                        errorMsg = json.error || json.message || 'Delete failed';
-                                    } else {
-                                        const txt = await r.text();
-                                        // If it looks like HTML, show a generic error
-                                        if (txt.trim().startsWith('<')) {
-                                            errorMsg = `Delete failed: HTTP ${r.status}`;
-                                        } else {
-                                            errorMsg = txt || `Delete failed: HTTP ${r.status}`;
-                                        }
-                                    }
-                                } catch (parseErr) {
-                                    errorMsg = `Delete failed: HTTP ${r.status}`;
-                                }
-                                
-                                if (!r.ok) return alert(errorMsg);
+                                const txt = await r.text();
+                                if (!r.ok) return alert('Failed to delete: ' + (txt || r.status));
                                 // remove this manage-row and any message UI immediately
                                 try { row.remove(); } catch (e) { }
                                 removeImageUI(filename);
@@ -3628,11 +3570,7 @@
             const empty = msgs.querySelector('.empty'); if (empty) empty.remove();
             const el = document.createElement('div'); el.className = 'msg' + (role === 'user' ? ' user' : '');
             let html = '';
-            if (imageObjOrFilename) {
-                const imgUrl = getImageUrl(imageObjOrFilename);
-                const filename = typeof imageObjOrFilename === 'string' ? imageObjOrFilename : imageObjOrFilename.filename;
-                html += `<div style='margin-bottom:8px'><img data-fn='${filename}' src='${imgUrl}' style='max-width:220px; border-radius:8px' onerror='this.style.opacity="0.3"; this.alt="Image not found";'></div>`;
-            }
+            if (imageObjOrFilename) html += `<div style='margin-bottom:8px'><img data-fn='${typeof imageObjOrFilename === 'string' ? imageObjOrFilename : imageObjOrFilename.filename}' src='${getImageUrl(imageObjOrFilename)}' style='max-width:220px; border-radius:8px'></div>`;
             // Store growth data for internal use but don't display any technical info
             html += `<div>${text}${imageId ? ' 📷' : ''}</div>`;
             el.innerHTML = html;
@@ -4063,48 +4001,15 @@
                 // show progress UI
                 progressBarFill.style.width = '0%'; progressText.textContent = '0%'; progressWrapper.style.display = 'flex';
                 try {
-                    let res = await doUploadWithProgress(fd, authH);
-                    
-                    // Handle 401 - retry with token if provided
+                    const res = await doUploadWithProgress(fd, authH);
                     if (!res.ok && res.status === 401) {
                         const token = prompt('Server requires an invite token. Enter it now (you can store it in the browser):');
-                        if (token) {
-                            INVITE_TOKEN = token;
-                            localStorage.setItem('inviteToken', token);
-                            authH['x-invite-token'] = token;
-                            // Retry upload with token
-                            res = await doUploadWithProgress(fd, authH);
-                        } else {
-                            if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
-                            uploading = false;
-                            progressWrapper.style.display = 'none';
-                            return alert('Upload cancelled - invite token required');
-                        }
+                        if (token) { INVITE_TOKEN = token; localStorage.setItem('inviteToken', token); authH['x-invite-token'] = token; }
                     }
-                    
-                    // Check if request failed
-                    if (!res.ok) {
-                        let errorMsg = 'Upload failed';
-                        try {
-                            const errorText = await res.text();
-                            const errorData = JSON.parse(errorText);
-                            errorMsg = errorData.error || errorData.message || errorText || 'Unknown error';
-                        } catch (e) {
-                            errorMsg = `Upload failed: HTTP ${res.status}`;
-                        }
-                        if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
-                        uploading = false;
-                        progressWrapper.style.display = 'none';
-                        return alert(errorMsg);
-                    }
-                    
                     const data = await res.json();
                     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
                     uploading = false;
-                    if (!data.success) {
-                        progressWrapper.style.display = 'none';
-                        return alert('Upload failed: ' + (data.error || 'unknown'));
-                    }
+                    if (!data.success) return alert('Upload failed: ' + (data.error || 'unknown'));
                     // UI updates (same as previous flow)
                     const subjType = data.subjectType || 'plant';
                     const subjObj = data[subjType] || data.plant || data.flower || null;
@@ -4172,18 +4077,14 @@
                             if (tabPlants) tabPlants.classList.add('active');
                             if (tabFlowers) tabFlowers.classList.remove('active');
                             loadPlants();
-                            if (filterAll) filterAll.textContent = 'All Plants';
+                            filterAll.textContent = 'All Plants';
                         }
                     }
                     // Do not speak the placeholder message automatically on upload.
-                    // Hide progress bar on success
-                    progressWrapper.style.display = 'none';
                 } catch (err) {
-                    console.error('Upload failed', err);
+                    console.error('Upload failed', err); alert('Upload failed: ' + (err && err.message));
                     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
                     uploading = false;
-                    progressWrapper.style.display = 'none';
-                    alert('Upload failed: ' + (err && err.message || 'Network error. Please check your connection and try again.'));
                 } finally {
                     progressWrapper.style.display = 'none';
                 }
@@ -4393,14 +4294,7 @@
                 const jd = await r.json();
                 let plantReply = null;
                 if (r.ok && jd && jd.reply) {
-                    // Use language-specific reply if available, otherwise use main reply
-                    if (currentLanguage === 'kn' && jd.reply_kn) {
-                        plantReply = jd.reply_kn;
-                    } else if (currentLanguage === 'en' && jd.reply_en) {
-                        plantReply = jd.reply_en;
-                    } else {
-                        plantReply = jd.reply;
-                    }
+                    plantReply = jd.reply;
                 } else {
                     // log server problem for debugging and fall back to client generator
                     console.warn('/reply did not return a valid reply', { status: r.status, body: jd });
@@ -4421,12 +4315,7 @@
                 hist[hist.length - 1].text_en = text_en;
                 hist[hist.length - 1].text_kn = text_kn;
                 appendMessageEl('plant', plantReply, rt, imageFilename, imageId, growthDelta, text_en, text_kn);
-                // Use language-specific text for speaking
-                const textToSpeak = (currentLanguage === 'kn' && text_kn) ? text_kn : 
-                                   (currentLanguage === 'en' && text_en) ? text_en : 
-                                   plantReply;
-                console.log('🔊 Speaking text (language:', currentLanguage, '):', textToSpeak.substring(0, 50));
-                speak(textToSpeak);
+                speak(plantReply);
             } catch (err) {
                 console.error('Reply failed', err);
                 const plantReply = generateClientReply(currentPlant, text);
@@ -4436,10 +4325,7 @@
                 hist[hist.length - 1].text_kn = plantReply;
                 saveConv(currentPlant.id, hist);
                 appendMessageEl('plant', plantReply, rt, null, null, null, plantReply, plantReply);
-                // Use language-specific text for speaking (fallback case)
-                const textToSpeakFallback = plantReply;
-                console.log('🔊 Speaking fallback text (language:', currentLanguage, '):', textToSpeakFallback.substring(0, 50));
-                speak(textToSpeakFallback);
+                speak(plantReply);
             } finally {
                 hideTyping();
                 document.getElementById('replyText').value = '';
@@ -4568,40 +4454,14 @@
                             // try plants delete first, fall back to flowers
                             let url = baseUrl + `/plants/${plantId}/images/${imgId}`;
                             console.log('DELETE request URL:', url);
-                            // Add token if available
-                            const delOpts = { method: 'DELETE' };
-                            if (typeof INVITE_TOKEN !== 'undefined' && INVITE_TOKEN) {
-                                delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
-                            }
-                            
-                            let r = await fetch(url, delOpts);
+                            let r = await fetch(url, { method: 'DELETE' });
                             if (!r.ok && r.status === 404) {
                                 url = baseUrl + `/flowers/${plantId}/images/${imgId}`;
                                 console.log('Fallback DELETE request URL:', url);
-                                r = await fetch(url, delOpts);
+                                r = await fetch(url, { method: 'DELETE' });
                             }
-                            
-                            // Try to parse as JSON first, fallback to text
-                            let errorMsg = '';
-                            try {
-                                const contentType = r.headers.get('content-type');
-                                if (contentType && contentType.includes('application/json')) {
-                                    const json = await r.json();
-                                    errorMsg = json.error || json.message || 'Delete failed';
-                                } else {
-                                    const txt = await r.text();
-                                    // If it looks like HTML, show a generic error
-                                    if (txt.trim().startsWith('<')) {
-                                        errorMsg = `Delete failed: HTTP ${r.status}`;
-                                    } else {
-                                        errorMsg = txt || `Delete failed: HTTP ${r.status}`;
-                                    }
-                                }
-                            } catch (parseErr) {
-                                errorMsg = `Delete failed: HTTP ${r.status}`;
-                            }
-                            
-                            if (!r.ok) return alert(errorMsg);
+                            const txt = await r.text();
+                            if (!r.ok) return alert('Failed to delete: ' + (txt || r.status));
                             // remove this manage-row and clear any shown image UI
                             try { row.remove(); } catch (e) { }
                             removeImageUI(del.getAttribute('data-fn'));
@@ -4830,38 +4690,14 @@
                         try {
 
                             const delOpts = { method: 'DELETE' };
-                            if (typeof INVITE_TOKEN !== 'undefined' && INVITE_TOKEN) {
-                                delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
-                            }
+                            if (INVITE_TOKEN) delOpts.headers = { 'x-invite-token': INVITE_TOKEN };
 
                             // Use explicit subject type if available to pick correct endpoint deterministically
                             const kind = plant._type === 'flower' ? 'flowers' : 'plants';
-                            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : '';
-                            const url = baseUrl + `/${kind}/${plant.id}/images/${img.id}`;
-                            console.log('DELETE request URL:', url);
+                            const url = `/${kind}/${plant.id}/images/${img.id}`;
                             const r = await fetch(url, delOpts);
-                            
-                            // Try to parse as JSON first, fallback to text
-                            let errorMsg = '';
-                            try {
-                                const contentType = r.headers.get('content-type');
-                                if (contentType && contentType.includes('application/json')) {
-                                    const json = await r.json();
-                                    errorMsg = json.error || json.message || 'Delete failed';
-                                } else {
-                                    const txt = await r.text();
-                                    // If it looks like HTML, show a generic error
-                                    if (txt.trim().startsWith('<')) {
-                                        errorMsg = `Delete failed: HTTP ${r.status}`;
-                                    } else {
-                                        errorMsg = txt || `Delete failed: HTTP ${r.status}`;
-                                    }
-                                }
-                            } catch (parseErr) {
-                                errorMsg = `Delete failed: HTTP ${r.status}`;
-                            }
-                            
-                            if (!r.ok) return alert(errorMsg);
+                            const txt = await r.text();
+                            if (!r.ok) return alert('Delete failed: ' + (txt || r.status));
 
                             // remove from UI
                             removeImageUI(img.filename);

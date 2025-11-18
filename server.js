@@ -2643,11 +2643,11 @@ app.post("/reply-fast", requireToken, express.json(), (req, res) => {
 
 // Delete an image for a plant (remove DB entry and file)
 // Tokenless by default for single-recipient installs
-app.delete("/plants/:id/images/:imgId", (req, res) => {
+app.delete("/plants/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /plants/:id/images/:imgId", { id, imgId });
-    const db = readDB();
+    const db = await readDB();
     const plant = db.plants.find((p) => p.id === id);
     if (!plant) return res.status(404).json({ error: "Plant not found" });
     const imgIdx = (plant.images || []).findIndex((i) => i.id === imgId);
@@ -2675,7 +2675,7 @@ app.delete("/plants/:id/images/:imgId", (req, res) => {
       if (pIdx !== -1) db.plants.splice(pIdx, 1);
     }
     // persist
-    writeDB(db);
+    await writeDB(db);
     return res.json({ success: true, plant });
   } catch (e) {
     console.error("Delete image failed", e);
@@ -2684,11 +2684,11 @@ app.delete("/plants/:id/images/:imgId", (req, res) => {
 });
 
 // Delete an image for a flower (mirror the plants route)
-app.delete("/flowers/:id/images/:imgId", (req, res) => {
+app.delete("/flowers/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /flowers/:id/images/:imgId", { id, imgId });
-    const db = readDB();
+    const db = await readDB();
     db.flowers = db.flowers || [];
     const flower = db.flowers.find((p) => p.id === id);
     if (!flower) return res.status(404).json({ error: "Flower not found" });
@@ -2713,7 +2713,7 @@ app.delete("/flowers/:id/images/:imgId", (req, res) => {
       const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
       if (pIdx !== -1) db.flowers.splice(pIdx, 1);
     }
-    writeDB(db);
+    await writeDB(db);
     return res.json({ success: true, flower });
   } catch (e) {
     console.error("Delete flower image failed", e);
