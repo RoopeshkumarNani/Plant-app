@@ -1906,9 +1906,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
+      firebase_url: `${req.protocol}://${req.get("host")}/uploads/${path.basename(file.path)}`,
       supabase_url: null,
       storage_path: null,
     };
+    console.log("✅ Set firebase_url (fallback):", imgEntry.firebase_url);
     plant.images.push(imgEntry);
 
     const msgEntry = {
@@ -1935,17 +1937,21 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           imgEntry.storage_path = webpFilename;
           console.log("✅ Supabase upload successful, URL:", publicUrl);
         } else {
-          console.warn("⚠️  Supabase upload returned null URL - will fallback to Firebase URL");
-          // Use firebase_url as fallback if supabase fails
+          console.warn("⚠️  Supabase upload returned null URL - will use firebase_url fallback");
           imgEntry.supabase_url = null;
         }
       } catch (e) {
         console.error("❌ SYNCHRONOUS Supabase upload failed:", e.message, e.stack);
-        console.warn("   Falling back to firebase_url for image serving");
+        console.warn("   Will use firebase_url fallback:", imgEntry.firebase_url);
       }
     } else {
       console.warn("⚠️  fileBuffer is null - skipping Supabase upload, will use firebase_url");
     }
+
+    // Save to database immediately
+    console.log("💾 Saving new plant/flower to database...");
+    await writeDB(db);
+    console.log("✅ Plant/flower saved to database");
 
     res.json({
       success: true,
@@ -1955,7 +1961,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       conversation: msgEntry,
     });
 
-    // Run enrichment in the background
+    // Run enrichment in the background (analyzes green area, identifies species, etc)
+    console.log("🔄 Starting background enrichment...");
     enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollection, file.path);
 
   } catch (e) {
