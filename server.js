@@ -96,7 +96,7 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
     const { data, error } = await supabase.storage
       .from("images")
       .upload(filename, fileBuffer, {
-        contentType: "image/jpeg",
+        contentType: "image/webp",
         upsert: false,
       });
 
@@ -1925,18 +1925,26 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       try {
         console.log("📤 Uploading to Supabase Storage (SYNCHRONOUS)...");
         const webpFilename = imgEntry.id + "-image.webp";
+        console.log(`   Converting JPEG (${fileBuffer.length} bytes) to WebP...`);
         const webpBuffer = await sharp(fileBuffer).webp({ quality: 80 }).toBuffer();
+        console.log(`   WebP size: ${webpBuffer.length} bytes`);
+        console.log(`   Uploading to Supabase bucket 'images' with filename: ${webpFilename}`);
         const publicUrl = await uploadFileToSupabaseStorage(webpBuffer, webpFilename);
         if (publicUrl) {
           imgEntry.supabase_url = publicUrl;
           imgEntry.storage_path = webpFilename;
           console.log("✅ Supabase upload successful, URL:", publicUrl);
         } else {
-          console.warn("⚠️  Supabase upload returned null URL");
+          console.warn("⚠️  Supabase upload returned null URL - will fallback to Firebase URL");
+          // Use firebase_url as fallback if supabase fails
+          imgEntry.supabase_url = null;
         }
       } catch (e) {
-        console.error("❌ SYNCHRONOUS Supabase upload failed:", e.message);
+        console.error("❌ SYNCHRONOUS Supabase upload failed:", e.message, e.stack);
+        console.warn("   Falling back to firebase_url for image serving");
       }
+    } else {
+      console.warn("⚠️  fileBuffer is null - skipping Supabase upload, will use firebase_url");
     }
 
     res.json({

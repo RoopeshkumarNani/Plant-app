@@ -3032,16 +3032,37 @@
             // If it's an object, check for Supabase URL first (persistent cloud storage)
             if (typeof imageOrFilename === 'object') {
                 if (imageOrFilename.supabase_url) {
+                    console.log('✅ Using Supabase URL:', imageOrFilename.supabase_url);
                     return imageOrFilename.supabase_url;
                 }
                 // Fallback to legacy firebaseUrl for older data
                 if (imageOrFilename.firebaseUrl) {
+                    console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
                     return imageOrFilename.firebaseUrl;
+                }
+                // Also check firebase_url (snake_case from database)
+                if (imageOrFilename.firebase_url) {
+                    console.log('✅ Using firebase_url:', imageOrFilename.firebase_url);
+                    return imageOrFilename.firebase_url;
                 }
             }
             
-            // If no valid cloud URL is found, return an empty string or a placeholder
-            return '';
+            // Otherwise extract filename and construct URL
+            let filename = typeof imageOrFilename === 'string' ? imageOrFilename : imageOrFilename.filename;
+            if (!filename) {
+                console.warn('❌ No image URL found:', imageOrFilename);
+                return '';
+            }
+
+            // Use API_BASE_URL if available, otherwise fall back to /uploads/
+            if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
+                const url = API_BASE_URL + '/uploads/' + filename;
+                console.log('📸 Image URL (API_BASE):', url);
+                return url;
+            }
+            const url = '/uploads/' + filename;
+            console.log('📸 Image URL (fallback):', url);
+            return url;
         }
 
         // Lazy loading for images - only load when visible on screen
