@@ -3813,3 +3813,63 @@ app.get("/disk-status", (req, res) => {
     });
   }
 });
+
+// Admin endpoint to clean up all data (delete images and clear database)
+app.post("/admin/cleanup-all", requireToken, async (req, res) => {
+  try {
+    console.log("🗑️  [CLEANUP] Starting full cleanup...");
+
+    // 1. Delete all files from /uploads/
+    const uploadDir = UPLOAD_DIR;
+    if (fs.existsSync(uploadDir)) {
+      const files = fs.readdirSync(uploadDir);
+      let deletedCount = 0;
+      for (const file of files) {
+        if (file !== ".disk-test") {
+          const filePath = path.join(uploadDir, file);
+          try {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+            console.log(`  ✓ Deleted: ${file}`);
+          } catch (e) {
+            console.warn(`  ✗ Could not delete ${file}: ${e.message}`);
+          }
+        }
+      }
+      console.log(`✅ Deleted ${deletedCount} image files from /uploads/`);
+    }
+
+    // 2. Clear database (delete all data)
+    console.log("Clearing database...");
+    
+    // Delete in correct order (foreign key constraints)
+    await supabase.from("conversations").delete().neq("id", "");
+    console.log("  ✓ Deleted all conversations");
+    
+    await supabase.from("images").delete().neq("id", "");
+    console.log("  ✓ Deleted all images");
+    
+    await supabase.from("flowers").delete().neq("id", "");
+    console.log("  ✓ Deleted all flowers");
+    
+    await supabase.from("plants").delete().neq("id", "");
+    console.log("  ✓ Deleted all plants");
+    
+    console.log("✅ Database cleaned");
+
+    res.json({
+      success: true,
+      message: "All data cleaned successfully",
+      filesDeleted: fs.existsSync(uploadDir) 
+        ? fs.readdirSync(uploadDir).filter(f => f !== ".disk-test").length 
+        : 0,
+    });
+  } catch (error) {
+    console.error("❌ [CLEANUP] Error:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
