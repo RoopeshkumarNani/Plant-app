@@ -1906,11 +1906,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebase_url: `${req.protocol}://${req.get("host")}/uploads/${path.basename(file.path)}`,
-      supabase_url: null,
-      storage_path: null,
+      firebaseUrl: `${req.protocol}://${req.get("host")}/uploads/${path.basename(file.path)}`,
+      supabaseUrl: null,
+      storagePath: null,
     };
-    console.log("✅ Set firebase_url (fallback):", imgEntry.firebase_url);
+    console.log("✅ Set firebaseUrl (fallback):", imgEntry.firebaseUrl);
     plant.images.push(imgEntry);
 
     const msgEntry = {
@@ -1933,19 +1933,19 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log(`   Uploading to Supabase bucket 'images' with filename: ${webpFilename}`);
         const publicUrl = await uploadFileToSupabaseStorage(webpBuffer, webpFilename);
         if (publicUrl) {
-          imgEntry.supabase_url = publicUrl;
-          imgEntry.storage_path = webpFilename;
+          imgEntry.supabaseUrl = publicUrl;
+          imgEntry.storagePath = webpFilename;
           console.log("✅ Supabase upload successful, URL:", publicUrl);
         } else {
-          console.warn("⚠️  Supabase upload returned null URL - will use firebase_url fallback");
-          imgEntry.supabase_url = null;
+          console.warn("⚠️  Supabase upload returned null URL - will use firebaseUrl fallback");
+          imgEntry.supabaseUrl = null;
         }
       } catch (e) {
         console.error("❌ SYNCHRONOUS Supabase upload failed:", e.message, e.stack);
-        console.warn("   Will use firebase_url fallback:", imgEntry.firebase_url);
+        console.warn("   Will use firebaseUrl fallback:", imgEntry.firebaseUrl);
       }
     } else {
-      console.warn("⚠️  fileBuffer is null - skipping Supabase upload, will use firebase_url");
+      console.warn("⚠️  fileBuffer is null - skipping Supabase upload, will use firebaseUrl");
     }
 
     // Save to database immediately
