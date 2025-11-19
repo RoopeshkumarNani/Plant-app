@@ -1875,30 +1875,54 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       console.warn("⚠️  Could not read or compress file:", e.message);
     }
 
-    const { species, nickname, subjectType, subjectId } = req.body;
+    const { species, nickname, owner, subjectType, subjectId } = req.body;
     const db = await readDB();
-
-    let subjectCollection = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
 
+    let identifiedSpecies = species || "Unknown";
+    let determinedType = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
+
+    // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
+    console.log("🔍 Identifying species from image...");
+    try {
+      const identification = await callPlantNet(file.path);
+      if (identification && identification.species) {
+        identifiedSpecies = identification.species;
+        console.log(`✅ Identified species: ${identifiedSpecies}`);
+        
+        // ✅ CLASSIFY as flower or plant based on species
+        const classification = classifyAsFlowerOrPlant(identifiedSpecies);
+        determinedType = classification;
+        console.log(`✅ Classified as: ${classification}`);
+      }
+    } catch (e) {
+      console.warn(`⚠️  Species identification failed: ${e.message}`);
+    }
+
     let plant = null;
+    let collection = determinedType;
+
     if (subjectId) {
-      plant = (db[subjectCollection] || []).find((p) => p.id === subjectId);
+      // Adding image to existing item
+      plant = (db[collection] || []).find((p) => p.id === subjectId);
       if (!plant)
         return res.status(404).json({
           success: false,
-          error: `${subjectCollection.slice(0, -1)} not found`,
+          error: `${collection.slice(0, -1)} not found`,
         });
     } else {
+      // Creating new item - put in correct section immediately
       plant = {
         id: uuidv4(),
-        species: species || "Unknown",
+        species: identifiedSpecies,
         nickname: nickname || "",
+        owner: owner || "",
         images: [],
         conversations: [],
       };
-      db[subjectCollection].push(plant);
+      db[collection].push(plant);
+      console.log(`✅ Created new ${collection.slice(0, -1)} in correct section`);
     }
 
     const imgEntry = {
@@ -1948,22 +1972,23 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       console.warn("⚠️  fileBuffer is null - skipping Supabase upload, will use firebaseUrl");
     }
 
-    // Save to database immediately
-    console.log("💾 Saving new plant/flower to database...");
+    // ✅ SAVE TO DATABASE IMMEDIATELY (in correct section with correct owner)
+    console.log("💾 Saving new item to database immediately...");
     await writeDB(db);
-    console.log("✅ Plant/flower saved to database");
+    console.log("✅ Item saved to database in correct section!");
 
     res.json({
       success: true,
-      message: "Upload received, processing in background.",
+      message: "✅ Upload successful! Image identified and saved.",
+      subjectType: collection,
       plant: plant,
       image: imgEntry,
       conversation: msgEntry,
     });
 
-    // Run enrichment in the background (analyzes green area, identifies species, etc)
+    // Run enrichment in the background (analyzes green area, generates better response, etc)
     console.log("🔄 Starting background enrichment...");
-    enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollection, file.path);
+    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
 
   } catch (e) {
     console.error("❌ /upload endpoint error:", e.message, e.stack);
@@ -2079,114 +2104,6 @@ async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollectio
           console.warn("[ENRICH] Could not delete temp file:", e.message);
         }
       }, 30 * 1000); // 30-second delay
-  }
-}
-
-// ============================================================================
-// DATA ENRICHMENT (run in background after upload)
-// ============================================================================
-async function enrichImageAndRespond(
-  plant,
-  imgEntry,
-  msgEntry,
-  subjectCollection
-) {
-  try {
-    console.log(
-      `[ENRICH] Starting background enrichment for image ${imgEntry.id}`
-    );
-    const db = await readDB();
-    const subject = findSubjectById(db, plant.id);
-    if (!subject) {
-      console.error(`[ENRICH] Subject ${plant.id} not found in DB`);
-      return;
-    }
-
-    const localPath = path.join(UPLOAD_DIR, imgEntry.filename);
-    if (!fs.existsSync(localPath)) {
-      console.error(`[ENRICH] Local file ${localPath} does not exist`);
-      return;
-    }
-
-    // 1. Analyze green area
-    const area = await analyzeGreenArea(localPath);
-    imgEntry.area = area;
-    console.log(`[ENRICH] Green area: ${area}`);
-
-    // 2. Get image dimensions
-    try {
-      const metadata = await sharp(localPath).metadata();
-      imgEntry.width = metadata.width;
-      imgEntry.height = metadata.height;
-      imgEntry.fileSize = fs.statSync(localPath).size;
-    } catch (e) {
-      console.warn(`[ENRICH] Could not get image metadata: ${e.message}`);
-    }
-
-    // 3. Identify species if not already known
-    if (!subject.species || subject.species === "Unknown") {
-      const identification = await callPlantNet(localPath);
-      if (identification && identification.species) {
-        subject.species = identification.species;
-        console.log(`[ENRICH] Identified species: ${subject.species}`);
-      }
-    }
-
-    // 4. Calculate growth delta
-    let growthDelta = null;
-    if (subject.images.length > 1) {
-      const prevImg = subject.images[subject.images.length - 2];
-      if (prevImg.area > 0) {
-        growthDelta = (imgEntry.area - prevImg.area) / prevImg.area;
-        msgEntry.growthDelta = growthDelta;
-        console.log(`[ENRICH] Growth delta: ${growthDelta}`);
-      }
-    }
-
-    // 5. Generate a better response with OpenAI if available
-    const llmPrompt = `
-      A new photo of me has been uploaded.
-      My species is: ${subject.species}.
-      My nickname is: ${subject.nickname || "not set"}.
-      The photo was taken at: ${new Date(
-        imgEntry.uploadedAt
-      ).toLocaleTimeString()}.
-      My estimated green area in this photo is: ${Math.round(
-        (imgEntry.area || 0) * 100
-      )}%.
-      My growth since the last photo is: ${
-        growthDelta ? Math.round(growthDelta * 100) + "%" : "not applicable"
-      }.
-      My current profile:\n${buildProfileSummary(subject)}
-      Your task: Write a short, natural, first-person reply to the user.
-    `;
-
-    const llmResponse = await callOpenAIForMessage(llmPrompt);
-    if (llmResponse) {
-      msgEntry.text = llmResponse;
-      console.log(`[ENRICH] OpenAI response: "${llmResponse}"`);
-    }
-
-    // 6. Update the database with enriched data
-    const targetCollection =
-      subjectCollection === "flowers" ? db.flowers : db.plants;
-    const subjIndex = targetCollection.findIndex((p) => p.id === subject.id);
-    if (subjIndex > -1) {
-      targetCollection[subjIndex] = subject;
-      await writeDB(db);
-      console.log(`[ENRICH] Database updated for subject ${subject.id}`);
-    }
-
-    // 7. Notify client via SSE
-    sendSSE("enrichmentComplete", {
-      plantId: subject.id,
-      subjectType: subjectCollection,
-      image: imgEntry,
-      conversation: msgEntry,
-    });
-    console.log(`[ENRICH] SSE notification sent for ${subject.id}`);
-  } catch (e) {
-    console.error(`[ENRICH] Background enrichment failed: ${e.message}`);
   }
 }
 
