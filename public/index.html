@@ -4040,6 +4040,10 @@
                     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
                     uploading = false;
                     if (!data.success) return alert('Upload failed: ' + (data.error || 'unknown'));
+                    
+                    // Show success message
+                    alert('✅ Image uploaded successfully!\n\nProcessing: analyzing green area, identifying species...');
+                    
                     // UI updates (same as previous flow)
                     const subjType = data.subjectType || 'plant';
                     const subjObj = data[subjType] || data.plant || data.flower || null;
@@ -4057,9 +4061,10 @@
                     if (photoPreview) { photoPreview.src = ''; photoPreview.style.display = 'none'; }
                     if (filePlaceholder) filePlaceholder.style.display = 'block';
 
-                    // Wait a bit longer before reloading to allow background categorization to complete
-                    // (If it's a flower detected as plant, it will be moved by the server)
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    // Wait a bit longer before reloading to allow background enrichment to complete
+                    // (analyzing green area, identifying species, calculating growth delta, generating response)
+                    console.log('⏳ Waiting for enrichment to complete...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
 
                     // Immediately reload gallery to show the newly uploaded item
                     // Reset filter to 'all' when reloading after upload
