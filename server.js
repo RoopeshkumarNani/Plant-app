@@ -1861,568 +1861,561 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       });
     console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
 
-    // Read file into buffer immediately to ensure it's available for background processing
-    // This prevents issues if the file gets deleted from ephemeral storage later
     let fileBuffer = null;
     try {
       fileBuffer = fs.readFileSync(file.path);
       console.log("✅ File read into memory buffer, size:", fileBuffer.length);
-
-      // Compress image to reduce file size (improves loading speed)
-      try {
-        fileBuffer = await sharp(fileBuffer)
-          .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
-          .jpeg({ quality: 85, progressive: true })
-          .toBuffer();
-        console.log(
-          "✅ Image compressed, new size:",
-          fileBuffer.length,
-          "bytes"
-        );
-
-        // Write compressed image back to disk
-        fs.writeFileSync(file.path, fileBuffer);
-      } catch (compressErr) {
-        console.warn(
-          "⚠️  Image compression failed (continuing with original):",
-          compressErr.message
-        );
-      }
+      fileBuffer = await sharp(fileBuffer)
+        .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 85, progressive: true })
+        .toBuffer();
+      console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
+      fs.writeFileSync(file.path, fileBuffer);
     } catch (e) {
-      console.warn("⚠️  Could not read file into buffer:", e.message);
-      // Continue anyway - we can still try to use the file path
+      console.warn("⚠️  Could not read or compress file:", e.message);
     }
 
-    const { species, nickname, plantId, subjectType, subjectId, owner } =
-      req.body;
+    const { species, nickname, subjectType, subjectId } = req.body;
     const db = await readDB();
 
-    // Fast-path: create minimal image entry and placeholder message, persist quickly
-    let subjectCollection = "plants";
-    if (subjectType && (subjectType === "flower" || subjectType === "flowers"))
-      subjectCollection = "flowers";
+    let subjectCollection = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
 
-    // resolve or create subject (minimal fields). We only compute heavy analysis in background.
     let plant = null;
-    if (subjectType && subjectId) {
-      if (subjectType === "flower") subjectCollection = "flowers";
-      db[subjectCollection] = db[subjectCollection] || [];
-      plant = db[subjectCollection].find((p) => p.id === subjectId);
+    if (subjectId) {
+      plant = (db[subjectCollection] || []).find((p) => p.id === subjectId);
       if (!plant)
         return res.status(404).json({
           success: false,
-          error: `${subjectCollection.slice(0, -1)} not found for provided id`,
-        });
-    } else if (plantId) {
-      plant = db.plants.find((p) => p.id === plantId);
-      if (!plant)
-        return res.status(404).json({
-          success: false,
-          error: "Plant not found for provided plantId",
+          error: `${subjectCollection.slice(0, -1)} not found`,
         });
     } else {
-      // When subjectType is provided, only match/create inside that collection.
-      // If no subjectType provided, default to plants (legacy behavior).
-      const requestedType =
-        subjectType === "flower" || subjectType === "flowers"
-          ? "flowers"
-          : "plants";
-      db[requestedType] = db[requestedType] || [];
-
-      // try to match existing subject inside the requested collection by nickname or species
-      if (nickname)
-        plant = db[requestedType].find(
-          (p) =>
-            p.nickname && p.nickname.toLowerCase() === nickname.toLowerCase()
-        );
-      if (!plant && species)
-        plant = db[requestedType].find(
-          (p) => p.species && p.species.toLowerCase() === species.toLowerCase()
-        );
-
-      if (!plant) {
-        plant = {
-          id: uuidv4(),
-          species: species || "Unknown",
-          nickname: nickname || "",
-          images: [],
-          conversations: [],
-        };
-        if (owner) plant.owner = owner;
-        db[requestedType].push(plant);
-        subjectCollection = requestedType;
-      } else {
-        subjectCollection = requestedType;
-      }
+      plant = {
+        id: uuidv4(),
+        species: species || "Unknown",
+        nickname: nickname || "",
+        images: [],
+        conversations: [],
+      };
+      db[subjectCollection].push(plant);
     }
 
-    // create minimal image entry (area computed in background)
     const imgEntry = {
       id: uuidv4(),
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebaseUrl: null, // Legacy - will be populated after Firebase upload
-      supabaseUrl: null, // Will be populated after Supabase upload
+      supabase_url: null,
+      storage_path: null,
     };
-    plant.images = plant.images || [];
     plant.images.push(imgEntry);
-    plant.conversations = plant.conversations || [];
 
-    // create placeholder message quickly
     const msgEntry = {
       id: uuidv4(),
       role: "plant",
-      text: fallbackPlantMessage(
-        plant.species,
-        plant.nickname || plant.species,
-        null,
-        imgEntry
-      ),
+      text: fallbackPlantMessage(plant.species, plant.nickname, null, imgEntry),
       time: new Date().toISOString(),
       imageId: imgEntry.id,
       growthDelta: null,
     };
     plant.conversations.push(msgEntry);
 
-    // Set firebaseUrl to the public /uploads/ URL (legacy)
-    imgEntry.firebaseUrl = `${
-      process.env.API_BASE_URL || "https://plant-app-backend-h28h.onrender.com"
-    }/uploads/${imgEntry.filename}`;
-
-    // SYNCHRONOUS: Upload to Supabase Storage immediately (before responding to client)
-    try {
-      console.log("📤 Uploading to Supabase Storage (SYNCHRONOUS)...");
-      // Generate WebP filename for Supabase (smaller, faster)
-      const webpFilename = imgEntry.id + "-image.webp";
-      
-      // Convert compressed image to WebP for better compression
-      let webpBuffer = fileBuffer;
+    if (fileBuffer) {
       try {
-        webpBuffer = await sharp(fileBuffer)
-          .webp({ quality: 80 })
-          .toBuffer();
-        console.log(`✅ Converted to WebP: ${fileBuffer.length} → ${webpBuffer.length} bytes`);
-      } catch (webpErr) {
-        console.warn("⚠️  WebP conversion failed, using original:", webpErr.message);
-        webpBuffer = fileBuffer;
+        console.log("📤 Uploading to Supabase Storage (SYNCHRONOUS)...");
+        const webpFilename = imgEntry.id + "-image.webp";
+        const webpBuffer = await sharp(fileBuffer).webp({ quality: 80 }).toBuffer();
+        const publicUrl = await uploadFileToSupabaseStorage(webpBuffer, webpFilename);
+        if (publicUrl) {
+          imgEntry.supabase_url = publicUrl;
+          imgEntry.storage_path = webpFilename;
+          console.log("✅ Supabase upload successful, URL:", publicUrl);
+        } else {
+          console.warn("⚠️  Supabase upload returned null URL");
+        }
+      } catch (e) {
+        console.error("❌ SYNCHRONOUS Supabase upload failed:", e.message);
       }
-
-      // Upload to Supabase
-      const { data, error } = await supabase.storage
-        .from("images")
-        .upload(webpFilename, webpBuffer, {
-          contentType: "image/webp",
-          upsert: false,
-        });
-
-      if (error) {
-        console.error("❌ Supabase upload error:", error.message);
-      } else {
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from("images")
-          .getPublicUrl(webpFilename);
-        
-        console.log("✅ Image uploaded to Supabase:", publicUrl);
-        imgEntry.supabaseUrl = publicUrl;
-      }
-    } catch (supabaseErr) {
-      console.error("⚠️  Supabase upload failed:", supabaseErr.message);
     }
 
-    // Save to database (now with supabaseUrl populated)
-    await writeDB(db);
+    res.json({
+      success: true,
+      message: "Upload received, processing in background.",
+      plant: plant,
+      image: imgEntry,
+      conversation: msgEntry,
+    });
 
-    // respond quickly to the client before doing Supabase upload
-    // Supabase upload will happen in background
-    try {
-      const subjectTypeResp =
-        subjectCollection === "flowers" ? "flower" : "plant";
-      const subjectObj = {
-        id: plant.id,
-        species: plant.species,
-        nickname: plant.nickname,
-        images: plant.images,
-        conversations: plant.conversations,
-      };
-      const resp = {
-        success: true,
-        subjectType: subjectTypeResp,
-        [subjectTypeResp]: subjectObj,
-        message: msgEntry.text,
-        careHint: null,
-        identification: plant.identification || null,
-        imageUrl: imgEntry.supabaseUrl || `/uploads/${imgEntry.filename}`,
-        firebaseImageUrl: null, // Will be populated in background if needed
-        imageFilename: imgEntry.filename,
-        imageId: imgEntry.id,
-        growthDelta: null,
-        similarity: null,
-        likelyDifferentPlant: false,
-        speciesDetected: null,
-        speciesMismatch: false,
-      };
-      res.json(resp);
-    } catch (e) {
-      console.error("Failed to build upload response", e);
-      res.json({
-        success: true,
-        message: msgEntry.text,
-        imageFilename: imgEntry.filename,
-        imageId: imgEntry.id,
-      });
-    }
+    // Run enrichment in the background
+    enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollection, file.path);
 
-    // Background processing: analyze image, detect species, compute similarity/growth and update DB and conversations (including LLM enrichment)
-    (async () => {
-      try {
-        console.log("🔄 Background processing started for image:", imgEntry.id);
-        console.log(
-          "   Firebase bucket status - initialized?",
-          !!bucket,
-          "bucket.name:",
-          bucket?.name || "N/A"
-        );
-
-        // (Supabase Storage upload already done synchronously above before response)
-
-        // image analysis
-        let area = 0;
-        try {
-          area = await analyzeGreenArea(file.path);
-        } catch (err) {
-          console.error(
-            "analyzeGreenArea failed",
-            err && (err.stack || err.message || err)
-          );
-          area = 0;
-        }
-
-        // plant identification
-        let plantnet = null;
-        try {
-          console.log("⏳ Background: Starting species detection...");
-          plantnet = await callPlantNet(file.path);
-          console.log("✅ Background: Species detection completed:", plantnet);
-        } catch (err) {
-          console.error(
-            "callPlantNet failed",
-            err && (err.stack || err.message || err)
-          );
-          plantnet = null;
-        }
-
-        // compute similarity and growth (if previous image exists)
-        let similarity = null;
-        let likelyDifferentPlant = false;
-        let growth = null;
-        let speciesDetected = null;
-        let speciesMismatch = false;
-        try {
-          const freshDb = readDB();
-          const target = findSubjectById(freshDb, plant.id);
-          if (plantnet && target) {
-            target.identification = target.identification || {};
-            target.identification.species = plantnet.species;
-            target.identification.probability = plantnet.probability || null;
-            // Update the main species field if it's still "Unknown" or empty
-            if (
-              (!target.species || target.species === "Unknown") &&
-              plantnet.species
-            ) {
-              console.log(
-                `🌿 Background: Updating species from "${target.species}" to "${plantnet.species}"`
-              );
-              target.species = plantnet.species;
-            }
-
-            // Smart auto-categorization: if species suggests it's a flower but it's in plants, move it
-            if (plantnet.species) {
-              const detectedType = classifyAsFlowerOrPlant(plantnet.species);
-              const currentCollection =
-                subjectCollection === "flowers" ? "flower" : "plant";
-
-              console.log(
-                `🔍 Classification check: species="${plantnet.species}", detected=${detectedType}, current=${currentCollection}`
-              );
-
-              if (detectedType !== currentCollection) {
-                console.log(
-                  `🌸 Auto-categorization: "${plantnet.species}" detected as ${detectedType}, moving from ${currentCollection} to ${detectedType}`
-                );
-
-                // Ensure both collections exist
-                if (!freshDb.plants) freshDb.plants = [];
-                if (!freshDb.flowers) freshDb.flowers = [];
-
-                // Remove from current collection
-                const removeFrom =
-                  currentCollection === "flower" ? "flowers" : "plants";
-                const removeIdx = freshDb[removeFrom].findIndex(
-                  (p) => p.id === target.id
-                );
-                if (removeIdx >= 0) {
-                  freshDb[removeFrom].splice(removeIdx, 1);
-                  console.log(`✅ Removed from ${removeFrom} collection`);
-                }
-
-                // Add to correct collection (but only if not already there!)
-                const addTo = detectedType === "flower" ? "flowers" : "plants";
-                const alreadyExists = freshDb[addTo].some(
-                  (p) => p.id === target.id
-                );
-                if (!alreadyExists) {
-                  freshDb[addTo].push(target);
-                  console.log(`✅ Successfully moved to ${addTo} collection`);
-                } else {
-                  console.log(
-                    `⚠️  Item already exists in ${addTo}, skipping duplicate add`
-                  );
-                }
-
-                subjectCollection = addTo;
-
-                // Save DB immediately and notify client right away (don't wait for other processing)
-                writeDB(freshDb);
-                sendSSE("categorized", {
-                  subjectId: target.id,
-                  subjectType: detectedType,
-                  species: plantnet.species,
-                });
-              } else {
-                console.log(
-                  `ℹ️  No move needed: detected type matches current collection`
-                );
-              }
-            }
-          }
-
-          // find previous image (the one before the one we just pushed)
-          const imgs = target && target.images ? target.images : [];
-          const idx = imgs.findIndex((i) => i.id === imgEntry.id);
-          if (idx > 0) {
-            const prev = imgs[idx - 1];
-            if (prev && prev.filename) {
-              // compute similarity using pHash preferred
-              const aPath = file.path;
-              const bPath = path.join(UPLOAD_DIR, prev.filename);
-              try {
-                const phA = await imagePHash(aPath);
-                const phB = await imagePHash(bPath);
-                const ham = hammingDistanceBits(phA, phB);
-                similarity = Math.max(0, Math.min(1, 1 - ham / 64));
-              } catch (phErr) {
-                try {
-                  similarity = await imageSimilarity(aPath, bPath);
-                } catch (_) {
-                  similarity = null;
-                }
-              }
-              likelyDifferentPlant =
-                typeof similarity === "number" ? similarity < 0.45 : false;
-            }
-            // compute growth if prev.area exists
-            if (prev && typeof prev.area === "number") {
-              growth = (area - prev.area) / Math.max(prev.area, 0.0001);
-            }
-          }
-
-          // update image entry area and any identification
-          // locate the image entry in freshDb and update
-          if (target) {
-            const imgObj = target.images.find((i) => i.id === imgEntry.id);
-            if (imgObj) imgObj.area = area;
-            // flag species mismatch
-            speciesDetected =
-              plantnet && plantnet.species ? plantnet.species : null;
-            if (speciesDetected && target.species) {
-              try {
-                if (
-                  speciesDetected.toLowerCase().trim() !==
-                  String(target.species || "")
-                    .toLowerCase()
-                    .trim()
-                )
-                  speciesMismatch = true;
-              } catch (e) {
-                speciesMismatch = false;
-              }
-            }
-
-            // update the placeholder conversation entry with growth/flags (text will be replaced by LLM later)
-            target.conversations = target.conversations || [];
-            const convIdx = target.conversations.findIndex(
-              (c) => c.id === msgEntry.id
-            );
-            if (convIdx !== -1) {
-              target.conversations[convIdx].growthDelta = growth;
-            }
-            writeDB(freshDb);
-
-            // Build rich profile context for LLM enrichment
-            ensureProfile(target);
-            updateProfileFromConversation(target, {
-              role: "user",
-              text: "(New photo uploaded)",
-            });
-            const profileSummary = buildProfileSummary(target);
-
-            // Build prompt/context for LLM enrichment
-            const system = {
-              role: "system",
-              content: `You are a friendly houseplant that speaks in first-person, warmly and briefly. Do NOT include any meta commentary about prompts, instructions, or system messages. Reply directly as the plant, 1-3 sentences, mention visible changes or one concise care tip when relevant, and avoid prefatory or apologetic framing. Do NOT invent or assert a nickname; use the recorded nickname only if present. Avoid starting with 'Hi', 'Hello', or 'Hi there'.`,
-            };
-            // Build recent messages, collapse consecutive duplicate user messages
-            const rawRecent = (target.conversations || [])
-              .slice(-8)
-              .map((m) => ({
-                role: m.role === "user" ? "user" : "assistant",
-                content: m.text,
-              }))
-              // filter out assistant placeholder/template messages
-              .filter(
-                (m) =>
-                  !(m.role === "assistant" && isPlaceholderAssistant(m.content))
-              );
-            const contextMsgs = [];
-            for (const msg of rawRecent) {
-              const last = contextMsgs[contextMsgs.length - 1];
-              if (
-                last &&
-                last.role === "user" &&
-                msg.role === "user" &&
-                String(last.content).trim() === String(msg.content).trim()
-              )
-                continue;
-              contextMsgs.push(msg);
-            }
-            // Expand short ambiguous user prompts (e.g., "compare with previous") into explicit instructions
-            for (let i = 0; i < contextMsgs.length; i++) {
-              if (contextMsgs[i].role === "user") {
-                const txt = String(contextMsgs[i].content || "")
-                  .trim()
-                  .toLowerCase();
-                if (
-                  txt === "compare with previous" ||
-                  txt === "compare" ||
-                  txt === "compare previous"
-                ) {
-                  contextMsgs[i].content =
-                    "Please compare the most recent photo with the previous photo and describe visible changes (size, leaf area, pests, color), give a short growth percentage if available, and suggest one concise care action.";
-                }
-              }
-            }
-            const speciesInfo =
-              plantnet && plantnet.species
-                ? `${plantnet.species} (identified)`
-                : target.species;
-            let careHint = "";
-            if (area < 0.02)
-              careHint = "The plant looks very dry and may need water soon.";
-            else if (growth != null && growth < -0.03)
-              careHint =
-                "It looks like I might be shrinking—maybe I need more care.";
-            else if (growth != null && growth > 0.05)
-              careHint = "I seem to be growing well!";
-            let differentNote = "";
-            if (likelyDifferentPlant)
-              differentNote =
-                "\n\nP.S. The photo you uploaded looks visually different from the previous photo — if this is a different plant, consider creating a new entry so I can track it separately.";
-            if (speciesMismatch)
-              differentNote += `\n\nP.P.S. Plant.id detected a different species (${speciesDetected}) compared to this plant's recorded species.`;
-            // Provide concise image analysis info as system-level context (keeps it out of user-visible prefatory text)
-            const analysisNote =
-              `IMAGE ANALYSIS:\nspecies=${speciesInfo}; growth=${
-                typeof growth === "number"
-                  ? Math.round(growth * 100) + "%"
-                  : "unknown"
-              }; note=${
-                careHint || "none"
-              }\n\nPLANT PROFILE:\n${profileSummary}` +
-              (differentNote ? "\n\n" + differentNote : "");
-            // Put a concise analysis as a system message after the main system instruction
-            contextMsgs.unshift({ role: "system", content: analysisNote });
-
-            // call LLM to create a richer reply and update DB when available
-            try {
-              // Log the messages we're about to send (truncated) for debugging
-              try {
-                const dbg = [system, ...contextMsgs].map((m) => ({
-                  role: m.role,
-                  content: (m.content || m).toString().slice(0, 400),
-                }));
-                writeReplyDebug(
-                  "/background LLM_CALL messages " +
-                    JSON.stringify(dbg).slice(0, 2000)
-                );
-              } catch (e) {}
-              const fullMsg = await callOpenAIChat([system, ...contextMsgs]);
-              if (fullMsg) {
-                const freshDb2 = readDB();
-                const target2 = findSubjectById(freshDb2, target.id);
-                if (target2) {
-                  target2.conversations = target2.conversations || [];
-                  const idx2 = target2.conversations.findIndex(
-                    (c) => c.id === msgEntry.id
-                  );
-                  if (idx2 !== -1) {
-                    target2.conversations[idx2].text = fullMsg;
-                    target2.conversations[idx2].time = new Date().toISOString();
-                  } else {
-                    target2.conversations.push({
-                      id: uuidv4(),
-                      role: "plant",
-                      text: fullMsg,
-                      time: new Date().toISOString(),
-                      imageId: imgEntry.id,
-                      growthDelta: growth,
-                    });
-                  }
-                  // Make sure profile is persisted to database
-                  ensureProfile(target2);
-                  writeDB(freshDb2);
-                  try {
-                    // notify connected clients that enrichment finished for this subject
-                    sendSSE("enriched", {
-                      subjectId: target2.id,
-                      subjectType:
-                        db.flowers &&
-                        db.flowers.find((p) => p.id === target2.id)
-                          ? "flower"
-                          : "plant",
-                    });
-                  } catch (e) {
-                    /* continue */
-                  }
-                }
-              }
-            } catch (llErr) {
-              console.error(
-                "Background LLM call failed",
-                llErr && (llErr.stack || llErr.message || llErr)
-              );
-            }
-          }
-        } catch (bgErr) {
-          console.error(
-            "Background processing failed",
-            bgErr && (bgErr.stack || bgErr.message || bgErr)
-          );
-        }
-      } catch (outerErr) {
-        console.error(
-          "❌ Upload background worker error:",
-          outerErr && (outerErr.stack || outerErr.message || outerErr)
-        );
-      }
-    })();
   } catch (e) {
-    console.error("❌ Upload endpoint error:", e);
-    res.status(500).json({ success: false, error: e.message });
+    console.error("❌ /upload endpoint error:", e.message, e.stack);
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
+});
+
+// ============================================================================
+// DATA ENRICHMENT (run in background after upload)
+// ============================================================================
+async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollection, localFilePath) {
+  try {
+    console.log(`[ENRICH] Starting background enrichment for image ${imgEntry.id}`);
+    const db = await readDB();
+    const subject = findSubjectById(db, plant.id);
+    if (!subject) {
+      console.error(`[ENRICH] Subject ${plant.id} not found in DB`);
+      return;
+    }
+
+    if (!fs.existsSync(localFilePath)) {
+      console.error(`[ENRICH] Local file ${localFilePath} does not exist`);
+      return;
+    }
+
+    // 1. Analyze green area
+    const area = await analyzeGreenArea(localFilePath);
+    imgEntry.area = area;
+    console.log(`[ENRICH] Green area: ${area}`);
+
+    // 2. Get image dimensions
+    try {
+      const metadata = await sharp(localFilePath).metadata();
+      imgEntry.width = metadata.width;
+      imgEntry.height = metadata.height;
+      imgEntry.fileSize = fs.statSync(localFilePath).size;
+    } catch (e) {
+      console.warn(`[ENRICH] Could not get image metadata: ${e.message}`);
+    }
+
+    // 3. Identify species if not already known
+    if (!subject.species || subject.species === "Unknown") {
+      const identification = await callPlantNet(localFilePath);
+      if (identification && identification.species) {
+        subject.species = identification.species;
+        console.log(`[ENRICH] Identified species: ${subject.species}`);
+      }
+    }
+
+    // 4. Calculate growth delta
+    let growthDelta = null;
+    if (subject.images.length > 1) {
+      const prevImg = subject.images[subject.images.length - 2];
+      if (prevImg.area > 0) {
+        growthDelta = (imgEntry.area - prevImg.area) / prevImg.area;
+        msgEntry.growthDelta = growthDelta;
+        console.log(`[ENRICH] Growth delta: ${growthDelta}`);
+      }
+    }
+
+    // 5. Generate a better response with OpenAI if available
+    const llmPrompt = `
+      A new photo of me has been uploaded.
+      My species is: ${subject.species}.
+      My nickname is: ${subject.nickname || "not set"}.
+      The photo was taken at: ${new Date(imgEntry.uploadedAt).toLocaleTimeString()}.
+      My estimated green area in this photo is: ${Math.round((imgEntry.area || 0) * 100)}%.
+      My growth since the last photo is: ${growthDelta ? Math.round(growthDelta * 100) + "%" : "not applicable"}.
+      My current profile:\n${buildProfileSummary(subject)}
+      Your task: Write a short, natural, first-person reply to the user.
+    `;
+
+    const llmResponse = await callOpenAIForMessage(llmPrompt);
+    if (llmResponse) {
+      msgEntry.text = llmResponse;
+      console.log(`[ENRICH] OpenAI response: "${llmResponse}"`);
+    }
+
+    // 6. Update the database with enriched data
+    const targetCollection = subjectCollection === "flowers" ? db.flowers : db.plants;
+    const subjIndex = targetCollection.findIndex((p) => p.id === subject.id);
+    if (subjIndex > -1) {
+      // Make sure the specific image and conversation are updated
+      const imgIndex = targetCollection[subjIndex].images.findIndex(i => i.id === imgEntry.id);
+      if(imgIndex > -1) targetCollection[subjIndex].images[imgIndex] = imgEntry;
+      const msgIndex = targetCollection[subjIndex].conversations.findIndex(c => c.id === msgEntry.id);
+      if(msgIndex > -1) targetCollection[subjIndex].conversations[msgIndex] = msgEntry;
+      
+      await writeDB(db);
+      console.log(`[ENRICH] Database updated for subject ${subject.id}`);
+    }
+
+    // 7. Notify client via SSE
+    sendSSE("enrichmentComplete", {
+      plantId: subject.id,
+      subjectType: subjectCollection,
+      image: imgEntry,
+      conversation: msgEntry,
+    });
+    console.log(`[ENRICH] SSE notification sent for ${subject.id}`);
+
+  } catch (e) {
+    console.error(`[ENRICH] Background enrichment failed: ${e.message}`);
+  } finally {
+      // 8. Clean up the local file
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(localFilePath)) {
+            fs.unlinkSync(localFilePath);
+            console.log("[ENRICH] Cleaned up local upload:", path.basename(localFilePath));
+          }
+        } catch (e) {
+          console.warn("[ENRICH] Could not delete temp file:", e.message);
+        }
+      }, 30 * 1000); // 30-second delay
+  }
+}
+
+// ============================================================================
+// DATA ENRICHMENT (run in background after upload)
+// ============================================================================
+async function enrichImageAndRespond(
+  plant,
+  imgEntry,
+  msgEntry,
+  subjectCollection
+) {
+  try {
+    console.log(
+      `[ENRICH] Starting background enrichment for image ${imgEntry.id}`
+    );
+    const db = await readDB();
+    const subject = findSubjectById(db, plant.id);
+    if (!subject) {
+      console.error(`[ENRICH] Subject ${plant.id} not found in DB`);
+      return;
+    }
+
+    const localPath = path.join(UPLOAD_DIR, imgEntry.filename);
+    if (!fs.existsSync(localPath)) {
+      console.error(`[ENRICH] Local file ${localPath} does not exist`);
+      return;
+    }
+
+    // 1. Analyze green area
+    const area = await analyzeGreenArea(localPath);
+    imgEntry.area = area;
+    console.log(`[ENRICH] Green area: ${area}`);
+
+    // 2. Get image dimensions
+    try {
+      const metadata = await sharp(localPath).metadata();
+      imgEntry.width = metadata.width;
+      imgEntry.height = metadata.height;
+      imgEntry.fileSize = fs.statSync(localPath).size;
+    } catch (e) {
+      console.warn(`[ENRICH] Could not get image metadata: ${e.message}`);
+    }
+
+    // 3. Identify species if not already known
+    if (!subject.species || subject.species === "Unknown") {
+      const identification = await callPlantNet(localPath);
+      if (identification && identification.species) {
+        subject.species = identification.species;
+        console.log(`[ENRICH] Identified species: ${subject.species}`);
+      }
+    }
+
+    // 4. Calculate growth delta
+    let growthDelta = null;
+    if (subject.images.length > 1) {
+      const prevImg = subject.images[subject.images.length - 2];
+      if (prevImg.area > 0) {
+        growthDelta = (imgEntry.area - prevImg.area) / prevImg.area;
+        msgEntry.growthDelta = growthDelta;
+        console.log(`[ENRICH] Growth delta: ${growthDelta}`);
+      }
+    }
+
+    // 5. Generate a better response with OpenAI if available
+    const llmPrompt = `
+      A new photo of me has been uploaded.
+      My species is: ${subject.species}.
+      My nickname is: ${subject.nickname || "not set"}.
+      The photo was taken at: ${new Date(
+        imgEntry.uploadedAt
+      ).toLocaleTimeString()}.
+      My estimated green area in this photo is: ${Math.round(
+        (imgEntry.area || 0) * 100
+      )}%.
+      My growth since the last photo is: ${
+        growthDelta ? Math.round(growthDelta * 100) + "%" : "not applicable"
+      }.
+      My current profile:\n${buildProfileSummary(subject)}
+      Your task: Write a short, natural, first-person reply to the user.
+    `;
+
+    const llmResponse = await callOpenAIForMessage(llmPrompt);
+    if (llmResponse) {
+      msgEntry.text = llmResponse;
+      console.log(`[ENRICH] OpenAI response: "${llmResponse}"`);
+    }
+
+    // 6. Update the database with enriched data
+    const targetCollection =
+      subjectCollection === "flowers" ? db.flowers : db.plants;
+    const subjIndex = targetCollection.findIndex((p) => p.id === subject.id);
+    if (subjIndex > -1) {
+      targetCollection[subjIndex] = subject;
+      await writeDB(db);
+      console.log(`[ENRICH] Database updated for subject ${subject.id}`);
+    }
+
+    // 7. Notify client via SSE
+    sendSSE("enrichmentComplete", {
+      plantId: subject.id,
+      subjectType: subjectCollection,
+      image: imgEntry,
+      conversation: msgEntry,
+    });
+    console.log(`[ENRICH] SSE notification sent for ${subject.id}`);
+  } catch (e) {
+    console.error(`[ENRICH] Background enrichment failed: ${e.message}`);
+  }
+}
+
+app.post("/reply", requireToken, async (req, res) => {
+  try {
+    const { plantId, message, language } = req.body;
+    writeReplyDebug(
+      `/reply called with plantId: ${plantId}, message: ${message}`
+    );
+    if (!plantId || !message)
+      return res
+        .status(400)
+        .json({ success: false, error: "plantId and message are required" });
+
+    const db = await readDB();
+    const plant = findSubjectById(db, plantId);
+    if (!plant)
+      return res
+        .status(404)
+        .json({ success: false, error: "Plant not found" });
+
+    plant.conversations = plant.conversations || [];
+    const userMessage = {
+      id: uuidv4(),
+      role: "user",
+      text: message,
+      time: new Date().toISOString(),
+    };
+    plant.conversations.push(userMessage);
+
+    // Update plant profile based on user message
+    updateProfileFromConversation(plant, userMessage);
+
+    // Build conversation history for LLM
+    const history = (plant.conversations || [])
+      .slice(-10) // last 10 messages
+      .map((m) => ({
+        role: m.role === "plant" ? "assistant" : "user",
+        content: m.text,
+      }));
+
+    const systemPrompt = getSystemPrompt(language);
+    const messages = [{ role: "system", content: systemPrompt }, ...history];
+
+    // Add profile summary to the context for the assistant
+    const profileSummary = buildProfileSummary(plant);
+    messages.push({
+      role: "system",
+      content: `[My current status and profile]:\n${profileSummary}`,
+    });
+
+    writeReplyDebug(
+      `LLM chat request for ${plantId}: ${JSON.stringify(messages)}`
+    );
+
+    const llmResponse = await callOpenAIChat(messages);
+    let replyText = llmResponse;
+
+    if (!replyText) {
+      replyText = fallbackPlantMessage(plant.species, plant.nickname);
+      writeReplyDebug(`LLM failed, using fallback for ${plantId}`);
+    } else {
+      writeReplyDebug(`LLM success for ${plantId}: "${replyText}"`);
+    }
+
+    const plantMessage = {
+      id: uuidv4(),
+      role: "plant",
+      text: replyText,
+      time: new Date().toISOString(),
+    };
+    plant.conversations.push(plantMessage);
+
+    await writeDB(db);
+    res.json({ success: true, message: plantMessage });
+  } catch (e) {
+    writeReplyDebug(`ERROR in /reply: ${e.message}`);
+    console.error("Error in /reply:", e.message);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+app.get("/plants", requireToken, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.plants || []);
+  } catch (e) {
+    console.error("Error fetching plants:", e.message);
+    res.status(500).json({ error: "Could not fetch plants" });
+  }
+});
+
+app.get("/flowers", requireToken, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.flowers || []);
+  } catch (e) {
+    console.error("Error fetching flowers:", e.message);
+    res.status(500).json({ error: "Could not fetch flowers" });
+  }
+});
+
+// Endpoint to get all data at once
+app.get("/all-data", requireToken, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db);
+  } catch (e) {
+    console.error("Error fetching all data:", e.message);
+    res.status(500).json({ error: "Could not fetch data" });
+  }
+});
+
+// Endpoint to get a specific plant or flower by ID
+app.get("/subject/:id", requireToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = await readDB();
+    const subject = findSubjectById(db, id);
+    if (subject) {
+      res.json(subject);
+    } else {
+      res.status(404).json({ error: "Subject not found" });
+    }
+  } catch (e) {
+    console.error("Error fetching subject:", e.message);
+    res.status(500).json({ error: "Could not fetch subject" });
+  }
+});
+
+// Endpoint to get growth data for a specific plant/flower
+app.get("/growth-data/:id", requireToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = await readDB();
+    const subject = findSubjectById(db, id);
+    if (!subject) {
+      return res.status(404).json({ error: "Subject not found" });
+    }
+
+    const growthData = (subject.images || [])
+      .map((img) => ({
+        date: img.uploadedAt,
+        area: img.area,
+      }))
+      .filter((d) => d.area != null)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    res.json(growthData);
+  } catch (e) {
+    console.error("Error fetching growth data:", e.message);
+    res.status(500).json({ error: "Could not fetch growth data" });
+  }
+});
+
+// Endpoint to get health data for a specific plant/flower
+app.get("/health-dashboard/:id", requireToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = await readDB();
+    const subject = findSubjectById(db, id);
+    if (!subject) {
+      return res.status(404).json({ error: "Subject not found" });
+    }
+
+    const profile = ensureProfile(subject);
+    const healthStatus = computeHealthStatus(subject);
+    const careScore = computeCareScore(subject);
+    const wateringSchedule = inferWateringSchedule(subject);
+
+    res.json({
+      healthStatus,
+      careScore,
+      wateringSchedule,
+      lastWatered: profile.lastWatered,
+      lastFertilized: profile.lastFertilized,
+      lastRepotted: profile.lastRepotted,
+      preferredLight: profile.preferredLight,
+    });
+  } catch (e) {
+    console.error("Error fetching health dashboard:", e.message);
+    res.status(500).json({ error: "Could not fetch health dashboard" });
+  }
+});
+
+// New endpoint to delete an image from a plant/flower
+app.delete(
+  "/subject/:subjectId/image/:imageId",
+  requireToken,
+  async (req, res) => {
+    try {
+      const { subjectId, imageId } = req.params;
+      const db = await readDB();
+      const subject = findSubjectById(db, subjectId);
+
+      if (!subject) {
+        return res.status(404).json({ error: "Subject not found" });
+      }
+
+      const imageIndex = (subject.images || []).findIndex(
+        (img) => img.id === imageId
+      );
+      if (imageIndex === -1) {
+        return res.status(404).json({ error: "Image not found" });
+      }
+
+      const [imageToDelete] = subject.images.splice(imageIndex, 1);
+
+      // Delete from Supabase Storage
+      if (imageToDelete.storage_path) {
+        const { error } = await supabase.storage
+          .from("images")
+          .remove([imageToDelete.storage_path]);
+        if (error) {
+          console.warn(
+            `⚠️  Could not delete from Supabase Storage: ${error.message}`
+          );
+        } else {
+          console.log(
+            `✅ Image deleted from Supabase Storage: ${imageToDelete.storage_path}`
+          );
+        }
+      }
+
+      await writeDB(db);
+      res.json({ success: true, message: "Image deleted successfully" });
+    } catch (e) {
+      console.error("Error deleting image:", e.message);
+      res.status(500).json({ error: "Could not delete image" });
+    }
+  }
+);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`   - Local: http://localhost:${PORT}`);
+  console.log(
+    `   - Production: ${
+      process.env.RENDER_EXTERNAL_URL || "not-on-render"
+    }`
+  );
+  console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
+  console.log(`   - Using Supabase: ${USE_SUPABASE}`);
 });
 
 // Reply endpoint: user sends text and server will save it and optionally call LLM to produce plant reply
