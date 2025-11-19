@@ -3642,13 +3642,6 @@ app.post("/flowers", requireToken, express.json(), async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () =>
-  console.log(`Server started on port ${PORT}`)
-);
-
-// Informational warning if ElevenLabs TTS is not configured so operators see why /tts/eleven returns 403
 if (!process.env.ELEVENLABS_API_KEY || !process.env.ELEVENLABS_VOICE_ID) {
   console.warn(
     "ElevenLabs TTS not configured: set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to enable server TTS proxy"
