@@ -2073,7 +2073,14 @@ async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollectio
     if (subjIndex > -1) {
       // Make sure the specific image and conversation are updated
       const imgIndex = targetCollection[subjIndex].images.findIndex(i => i.id === imgEntry.id);
-      if(imgIndex > -1) targetCollection[subjIndex].images[imgIndex] = imgEntry;
+      if(imgIndex > -1) {
+        // Preserve URLs when updating image entry
+        const existingImg = targetCollection[subjIndex].images[imgIndex];
+        imgEntry.firebaseUrl = imgEntry.firebaseUrl || existingImg.firebaseUrl;
+        imgEntry.supabaseUrl = imgEntry.supabaseUrl || existingImg.supabaseUrl;
+        imgEntry.storagePath = imgEntry.storagePath || existingImg.storagePath;
+        targetCollection[subjIndex].images[imgIndex] = imgEntry;
+      }
       const msgIndex = targetCollection[subjIndex].conversations.findIndex(c => c.id === msgEntry.id);
       if(msgIndex > -1) targetCollection[subjIndex].conversations[msgIndex] = msgEntry;
       
