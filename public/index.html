@@ -2470,9 +2470,10 @@
         }
 
         // Auto-invalidate cache every 30 seconds to keep data fresh
-        setInterval(() => {
-            invalidateDataCache();
-        }, 30000);
+        // DISABLED: This was causing images to disappear after 30 seconds
+        // setInterval(() => {
+        //     invalidateDataCache();
+        // }, 30000);
 
         // ============================================================================
         // LANGUAGE SYSTEM - English & Kannada
