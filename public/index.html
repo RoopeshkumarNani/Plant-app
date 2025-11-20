@@ -4485,7 +4485,7 @@
                         try {
                             const plantId = del.getAttribute('data-plant');
                             const imgId = del.getAttribute('data-img');
-                            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : '';
+                            const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : 'https://plant-app-backend-h28h.onrender.com';
                             // try plants delete first, fall back to flowers
                             let url = baseUrl + `/plants/${plantId}/images/${imgId}`;
                             console.log('DELETE request URL:', url);
