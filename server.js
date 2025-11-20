@@ -378,10 +378,8 @@ async function syncDBToFirebase(dbData) {
 }
 
 // Define directories BEFORE error handlers that use them
-const UPLOAD_DIR =
-  process.env.NODE_ENV === "production"
-    ? "/app/uploads"
-    : path.join(__dirname, "uploads");
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+// Always use relative path from __dirname for consistency across environments
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
@@ -1883,7 +1881,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         .jpeg({ quality: 85, progressive: true })
         .toBuffer();
       console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
-      fs.writeFileSync(file.path, fileBuffer);
+      // ✅ NO LONGER SAVE TO LOCAL FILESYSTEM (ephemeral on Replit)
+      // Files will only be stored in Supabase Storage
+      console.log("ℹ️  Skipping local file save - will use Supabase Storage only");
     } catch (e) {
       console.warn("⚠️  Could not read or compress file:", e.message);
     }
@@ -1993,13 +1993,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebaseUrl: `https://${req.get("host")}/uploads/${path.basename(
-        file.path
-      )}`,
-      supabaseUrl: null,
-      storagePath: null,
+      firebase_url: null, // ❌ Will no longer use local files
+      supabase_url: null, // ✅ Will be set by Supabase Storage upload
+      storage_path: null,
     };
-    console.log("✅ Set firebaseUrl (fallback):", imgEntry.firebaseUrl);
+    console.log("✅ Created image entry (waiting for Supabase upload)");
     plant.images.push(imgEntry);
 
     const msgEntry = {
@@ -2014,7 +2012,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     if (fileBuffer) {
       try {
-        console.log("📤 Uploading to Supabase Storage (SYNCHRONOUS)...");
+        console.log("📤 Uploading to Supabase Storage (REQUIRED)...");
         const webpFilename = imgEntry.id + "-image.webp";
         console.log(
           `   Converting JPEG (${fileBuffer.length} bytes) to WebP...`
@@ -2033,29 +2031,42 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           webpBuffer,
           webpFilename
         );
+        
         if (publicUrl) {
-          imgEntry.supabaseUrl = publicUrl;
-          imgEntry.storagePath = webpFilename;
-          console.log("✅ Supabase upload successful, URL:", publicUrl);
+          imgEntry.supabase_url = publicUrl;
+          imgEntry.storage_path = webpFilename;
+          console.log("✅ Supabase upload successful!", publicUrl);
         } else {
-          console.warn(
-            "⚠️  Supabase upload returned null URL - this is a critical issue!"
-          );
-          console.warn("   Using firebaseUrl as fallback, but file won't be accessible!");
-          imgEntry.supabaseUrl = null;
+          throw new Error("Supabase upload failed - returned null URL");
         }
       } catch (e) {
         console.error(
-          "❌ SYNCHRONOUS Supabase upload failed:",
-          e.message,
-          e.stack
+          "❌ CRITICAL: Supabase upload failed! Image cannot be saved!",
+          e.message
         );
-        console.warn("   Using firebaseUrl fallback:", imgEntry.firebaseUrl);
+        console.error(e.stack);
+        
+        // Delete from database and return error
+        const idx = plant.images.indexOf(imgEntry);
+        if (idx > -1) plant.images.splice(idx, 1);
+        
+        return res.status(500).json({
+          success: false,
+          error: "Image upload to Supabase failed - file cannot be saved",
+          details: e.message,
+        });
       }
     } else {
-      console.warn(
-        "⚠️  fileBuffer is null - skipping Supabase upload, will use firebaseUrl"
-      );
+      console.error("❌ CRITICAL: fileBuffer is null - cannot process image!");
+      
+      // Delete from database and return error
+      const idx = plant.images.indexOf(imgEntry);
+      if (idx > -1) plant.images.splice(idx, 1);
+      
+      return res.status(400).json({
+        success: false,
+        error: "Failed to process image file",
+      });
     }
 
     // ✅ SAVE TO DATABASE IMMEDIATELY (in correct section with correct owner)
