@@ -1957,9 +1957,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebaseUrl: `${req.protocol}://${req.get(
-        "host"
-      )}/uploads/${path.basename(file.path)}`,
+      firebaseUrl: `https://${req.get("host")}/uploads/${path.basename(
+        file.path
+      )}`,
       supabaseUrl: null,
       storagePath: null,
     };
