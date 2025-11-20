@@ -3046,7 +3046,7 @@
                     return imageOrFilename.firebase_url;
                 }
             }
-            
+
             // Otherwise extract filename and construct URL
             let filename = typeof imageOrFilename === 'string' ? imageOrFilename : imageOrFilename.filename;
             if (!filename) {
@@ -3441,20 +3441,20 @@
                             if (imgEl) {
                                 // Show immediately with slight fade effect when loaded
                                 imgEl.style.transition = 'opacity 200ms ease';
-                                imgEl.addEventListener('load', () => { 
-                                    try { 
-                                        imgEl.style.opacity = '1'; 
+                                imgEl.addEventListener('load', () => {
+                                    try {
+                                        imgEl.style.opacity = '1';
                                         console.log('✅ Image loaded:', img.id);
-                                    } catch (e) { } 
+                                    } catch (e) { }
                                 });
-                                imgEl.addEventListener('error', () => { 
-                                    try { 
-                                        imgEl.style.opacity = '1'; 
+                                imgEl.addEventListener('error', () => {
+                                    try {
+                                        imgEl.style.opacity = '1';
                                         imgEl.style.background = 'linear-gradient(45deg, #f0f0f0 25%, transparent 25%, transparent 75%, #f0f0f0 75%, #f0f0f0), linear-gradient(45deg, #f0f0f0 25%, transparent 25%, transparent 75%, #f0f0f0 75%, #f0f0f0)';
                                         imgEl.style.backgroundSize = '20px 20px';
                                         imgEl.style.backgroundPosition = '0 0, 10px 10px';
                                         console.error('❌ Image failed to load:', img.id, img.filename);
-                                    } catch (e) { } 
+                                    } catch (e) { }
                                 });
                                 imgEl.addEventListener('click', (ev) => {
                                     ev.stopPropagation();
@@ -4040,10 +4040,10 @@
                     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; }
                     uploading = false;
                     if (!data.success) return alert('Upload failed: ' + (data.error || 'unknown'));
-                    
+
                     // Show success message
                     alert('✅ Image uploaded successfully!\n\nProcessing: analyzing green area, identifying species...');
-                    
+
                     // UI updates (same as previous flow)
                     const subjType = data.subjectType || 'plant';
                     const subjObj = data[subjType] || data.plant || data.flower || null;

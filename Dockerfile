@@ -8,7 +8,7 @@ RUN mkdir -p /app/data /app/uploads
 
 # Copy package files
 COPY package*.json ./
-
+k
 # Install dependencies with security updates
 RUN npm install --production && \
     npm cache clean --force && \

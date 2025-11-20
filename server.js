@@ -10,6 +10,7 @@ const Jimp = require("jimp");
 const sharp = require("sharp");
 const fetch = require("node-fetch");
 const FormData = require("form-data");
+const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 const admin = require("firebase-admin");
 const { createClient } = require("@supabase/supabase-js");
