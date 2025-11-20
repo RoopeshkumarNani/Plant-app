@@ -3029,21 +3029,34 @@
         function getImageUrl(imageOrFilename) {
             if (!imageOrFilename) return '';
 
+            // Helper to enforce HTTPS for mixed-content compliance
+            function ensureHttps(url) {
+                if (!url) return url;
+                // Replace http:// with https:// for HTTPS pages
+                if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+                    url = url.replace(/^http:/, 'https:');
+                }
+                return url;
+            }
+
             // If it's an object, check for Supabase URL first (persistent cloud storage)
             if (typeof imageOrFilename === 'object') {
                 if (imageOrFilename.supabase_url) {
-                    console.log('✅ Using Supabase URL:', imageOrFilename.supabase_url);
-                    return imageOrFilename.supabase_url;
+                    const url = ensureHttps(imageOrFilename.supabase_url);
+                    console.log('✅ Using Supabase URL:', url);
+                    return url;
                 }
                 // Fallback to legacy firebaseUrl for older data
                 if (imageOrFilename.firebaseUrl) {
-                    console.log('✅ Using Firebase URL:', imageOrFilename.firebaseUrl);
-                    return imageOrFilename.firebaseUrl;
+                    const url = ensureHttps(imageOrFilename.firebaseUrl);
+                    console.log('✅ Using Firebase URL:', url);
+                    return url;
                 }
                 // Also check firebase_url (snake_case from database)
                 if (imageOrFilename.firebase_url) {
-                    console.log('✅ Using firebase_url:', imageOrFilename.firebase_url);
-                    return imageOrFilename.firebase_url;
+                    const url = ensureHttps(imageOrFilename.firebase_url);
+                    console.log('✅ Using firebase_url:', url);
+                    return url;
                 }
             }
 
@@ -3054,15 +3067,14 @@
                 return '';
             }
 
-            // Use API_BASE_URL if available, otherwise fall back to /uploads/
-            if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
-                const url = API_BASE_URL + '/uploads/' + filename;
-                console.log('📸 Image URL (API_BASE):', url);
-                return url;
-            }
-            const url = '/uploads/' + filename;
-            console.log('📸 Image URL (fallback):', url);
-            return url;
+            // Use window.API_BASE_URL if available (check window scope explicitly)
+            let baseUrl = (typeof window !== 'undefined' && window.API_BASE_URL)
+                ? window.API_BASE_URL
+                : 'https://plant-app-backend-h28h.onrender.com';
+
+            const url = baseUrl + '/uploads/' + filename;
+            console.log('📸 Image URL (with baseUrl):', url);
+            return ensureHttps(url);
         }
 
         // Lazy loading for images - only load when visible on screen
@@ -3454,6 +3466,8 @@
                                         imgEl.style.backgroundSize = '20px 20px';
                                         imgEl.style.backgroundPosition = '0 0, 10px 10px';
                                         console.error('❌ Image failed to load:', img.id, img.filename);
+                                        console.error('   Attempted URL:', imgEl.src);
+                                        console.error('   This usually means: HTTP image blocked on HTTPS site (mixed content), or file not found');
                                     } catch (e) { }
                                 });
                                 imgEl.addEventListener('click', (ev) => {

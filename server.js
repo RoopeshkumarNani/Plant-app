@@ -477,6 +477,12 @@ app.use((req, res, next) => {
   // Allow images to be loaded cross-origin with proper headers
   res.header("Cross-Origin-Resource-Policy", "cross-origin");
   res.header("Cross-Origin-Opener-Policy", "unsafe-none");
+  
+  // HTTPS enforcement: redirect insecure requests if needed
+  if (process.env.NODE_ENV === 'production' && req.header('x-forwarded-proto') === 'http') {
+    return res.redirect(301, 'https://' + req.header('host') + req.url);
+  }
+  
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
@@ -669,8 +675,11 @@ async function writeDB(obj) {
               width: img.width || null,
               height: img.height || null,
             };
-            const { error: imgError } = await supabase.from("images").upsert(imgData, { onConflict: "id" });
-            if (imgError) console.error("❌ Error upserting image:", imgError.message);
+            const { error: imgError } = await supabase
+              .from("images")
+              .upsert(imgData, { onConflict: "id" });
+            if (imgError)
+              console.error("❌ Error upserting image:", imgError.message);
           }
         }
 
@@ -689,8 +698,14 @@ async function writeDB(obj) {
               time: conv.time,
               growth_delta: conv.growthDelta || null,
             };
-            const { error: convError } = await supabase.from("conversations").upsert(convData, { onConflict: "id" });
-            if (convError) console.error("❌ Error upserting conversation:", convError.message);
+            const { error: convError } = await supabase
+              .from("conversations")
+              .upsert(convData, { onConflict: "id" });
+            if (convError)
+              console.error(
+                "❌ Error upserting conversation:",
+                convError.message
+              );
           }
         }
       }
@@ -739,8 +754,11 @@ async function writeDB(obj) {
               width: img.width || null,
               height: img.height || null,
             };
-            const { error: imgError } = await supabase.from("images").upsert(imgData, { onConflict: "id" });
-            if (imgError) console.error("❌ Error upserting image:", imgError.message);
+            const { error: imgError } = await supabase
+              .from("images")
+              .upsert(imgData, { onConflict: "id" });
+            if (imgError)
+              console.error("❌ Error upserting image:", imgError.message);
           }
         }
 
@@ -759,8 +777,14 @@ async function writeDB(obj) {
               time: conv.time,
               growth_delta: conv.growthDelta || null,
             };
-            const { error: convError } = await supabase.from("conversations").upsert(convData, { onConflict: "id" });
-            if (convError) console.error("❌ Error upserting conversation:", convError.message);
+            const { error: convError } = await supabase
+              .from("conversations")
+              .upsert(convData, { onConflict: "id" });
+            if (convError)
+              console.error(
+                "❌ Error upserting conversation:",
+                convError.message
+              );
           }
         }
       }
@@ -1920,12 +1944,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         `❌ db[${collection}] is undefined! Available keys:`,
         Object.keys(db)
       );
-      return res
-        .status(500)
-        .json({
-          success: false,
-          error: `Collection '${collection}' not found in database`,
-        });
+      return res.status(500).json({
+        success: false,
+        error: `Collection '${collection}' not found in database`,
+      });
     }
 
     if (subjectId) {
@@ -2984,7 +3006,10 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+        console.warn(
+          "[DELETE] Failed to remove from Supabase Storage:",
+          e.message
+        );
       }
     }
 
@@ -3066,7 +3091,10 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+        console.warn(
+          "[DELETE] Failed to remove from Supabase Storage:",
+          e.message
+        );
       }
     }
 
@@ -3909,25 +3937,49 @@ app.post("/admin/cleanup-all", requireToken, async (req, res) => {
     // Delete in correct order (foreign key constraints)
     const { data: convs } = await supabase.from("conversations").select("id");
     if (convs && convs.length > 0) {
-      await supabase.from("conversations").delete().in("id", convs.map(c => c.id));
+      await supabase
+        .from("conversations")
+        .delete()
+        .in(
+          "id",
+          convs.map((c) => c.id)
+        );
       console.log(`  ✓ Deleted ${convs.length} conversations`);
     }
 
     const { data: imgs } = await supabase.from("images").select("id");
     if (imgs && imgs.length > 0) {
-      await supabase.from("images").delete().in("id", imgs.map(i => i.id));
+      await supabase
+        .from("images")
+        .delete()
+        .in(
+          "id",
+          imgs.map((i) => i.id)
+        );
       console.log(`  ✓ Deleted ${imgs.length} images`);
     }
 
     const { data: flowers } = await supabase.from("flowers").select("id");
     if (flowers && flowers.length > 0) {
-      await supabase.from("flowers").delete().in("id", flowers.map(f => f.id));
+      await supabase
+        .from("flowers")
+        .delete()
+        .in(
+          "id",
+          flowers.map((f) => f.id)
+        );
       console.log(`  ✓ Deleted ${flowers.length} flowers`);
     }
 
     const { data: plants } = await supabase.from("plants").select("id");
     if (plants && plants.length > 0) {
-      await supabase.from("plants").delete().in("id", plants.map(p => p.id));
+      await supabase
+        .from("plants")
+        .delete()
+        .in(
+          "id",
+          plants.map((p) => p.id)
+        );
       console.log(`  ✓ Deleted ${plants.length} plants`);
     }
 
