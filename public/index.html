@@ -2416,6 +2416,65 @@
         debugLog.style.display = 'none';
 
         // ============================================================================
+        // CACHE BUSTING SYSTEM - Prevent stale cached data from displaying
+        // ============================================================================
+        
+        // Version number for cache invalidation - increment when data model changes
+        const CACHE_VERSION = '2.0';
+        const CACHE_KEY_PREFIX = `plantapp_v${CACHE_VERSION}_`;
+        
+        // Clear all old cache versions on page load
+        function clearObsoleteCaches() {
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                // Remove any keys that don't have our current version prefix
+                if (key.startsWith('plantapp_') && !key.startsWith(CACHE_KEY_PREFIX)) {
+                    console.log(`🗑️  Removing obsolete cache: ${key}`);
+                    localStorage.removeItem(key);
+                }
+            });
+        }
+        clearObsoleteCaches();
+        
+        // Function to get data with cache-busting timestamp
+        function getCachedData(key, defaultValue = null) {
+            const versionedKey = CACHE_KEY_PREFIX + key;
+            try {
+                const cached = localStorage.getItem(versionedKey);
+                if (cached) {
+                    return JSON.parse(cached);
+                }
+            } catch (e) {
+                console.warn(`Failed to parse cached data for ${key}:`, e);
+                localStorage.removeItem(versionedKey);
+            }
+            return defaultValue;
+        }
+        
+        // Function to set data with cache-busting timestamp
+        function setCachedData(key, value) {
+            const versionedKey = CACHE_KEY_PREFIX + key;
+            try {
+                localStorage.setItem(versionedKey, JSON.stringify(value));
+            } catch (e) {
+                console.warn(`Failed to cache data for ${key}:`, e);
+            }
+        }
+        
+        // Clear specific cached plant/flower data to force refresh
+        function invalidateDataCache() {
+            console.log('🔄 Invalidating all plant/flower caches');
+            localStorage.removeItem(CACHE_KEY_PREFIX + 'plants');
+            localStorage.removeItem(CACHE_KEY_PREFIX + 'flowers');
+            localStorage.removeItem(CACHE_KEY_PREFIX + 'lastFetch');
+        }
+        
+        // Auto-invalidate cache every 30 seconds to keep data fresh
+        setInterval(() => {
+            invalidateDataCache();
+        }, 30000);
+
+        // ============================================================================
         // LANGUAGE SYSTEM - English & Kannada
         // ============================================================================
 
@@ -3313,15 +3372,28 @@
             const maxRetries = 3;
             let lastError = null;
 
+            // Add cache-busting query parameter to all requests
+            const separator = url.includes('?') ? '&' : '?';
+            const cacheBustUrl = url + separator + 't=' + Date.now();
+
             // Prepend API_BASE_URL if url is relative
-            const fullUrl = typeof API_BASE_URL !== 'undefined' && url.startsWith('/')
-                ? API_BASE_URL + url
-                : url;
+            const fullUrl = typeof API_BASE_URL !== 'undefined' && cacheBustUrl.startsWith('/')
+                ? API_BASE_URL + cacheBustUrl
+                : cacheBustUrl;
+
+            // Add headers to prevent caching
+            const headers = {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                ...options.headers
+            };
+            const fetchOptions = { ...options, headers };
 
             // Try fetch first (with retries)
             for (let i = 0; i < maxRetries; i++) {
                 try {
-                    const res = await fetch(fullUrl, options);
+                    const res = await fetch(fullUrl, fetchOptions);
                     if (res.ok) return res;
                     // If 404, don't retry
                     if (res.status === 404) return res;
