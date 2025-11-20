@@ -1892,14 +1892,20 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
     const db = await readDB();
+    if (!db || typeof db !== 'object') {
+      console.error("❌ readDB returned invalid object:", typeof db, db);
+      return res.status(500).json({ success: false, error: "Database read failed" });
+    }
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
+    console.log("📋 DB after init - plants:", db.plants?.length || 0, "flowers:", db.flowers?.length || 0);
 
     let identifiedSpecies = species || "Unknown";
     let determinedType =
       subjectType === "flower" || subjectType === "flowers"
         ? "flowers"
         : "plants";
+    console.log("🏷️  Initial determinedType:", determinedType);
 
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
@@ -1912,7 +1918,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         // ✅ CLASSIFY as flower or plant based on species
         const classification = classifyAsFlowerOrPlant(identifiedSpecies);
         determinedType = classification;
-        console.log(`✅ Classified as: ${classification}`);
+        console.log(`✅ Classified as: ${classification} (type: ${typeof classification})`);
       }
     } catch (e) {
       console.warn(`⚠️  Species identification failed: ${e.message}`);
@@ -1920,6 +1926,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     let plant = null;
     let collection = determinedType;
+    console.log("🔑 Final collection value:", collection, "type:", typeof collection, "db keys:", Object.keys(db));
+
+    if (!db[collection]) {
+      console.error(`❌ db[${collection}] is undefined! Available keys:`, Object.keys(db));
+      return res.status(500).json({ success: false, error: `Collection '${collection}' not found in database` });
+    }
 
     if (subjectId) {
       // Adding image to existing item
