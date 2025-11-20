@@ -2,6 +2,7 @@ services:
   - type: web
     name: plant-app-backend
     runtime: node
+    buildCommand: npm run build
     startCommand: npm start
     autoDeploy: true
     envVars:

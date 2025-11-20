@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "start:log": "node server.js 2>&1 | tee data/server-run.log"
+    "start:log": "node server.js 2>&1 | tee data/server-run.log",
+    "build": "echo 'Build check: $(date)' && node -v"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.81.1",
