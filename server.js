@@ -1892,13 +1892,20 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
     const db = await readDB();
-    if (!db || typeof db !== 'object') {
+    if (!db || typeof db !== "object") {
       console.error("❌ readDB returned invalid object:", typeof db, db);
-      return res.status(500).json({ success: false, error: "Database read failed" });
+      return res
+        .status(500)
+        .json({ success: false, error: "Database read failed" });
     }
     db.plants = db.plants || [];
     db.flowers = db.flowers || [];
-    console.log("📋 DB after init - plants:", db.plants?.length || 0, "flowers:", db.flowers?.length || 0);
+    console.log(
+      "📋 DB after init - plants:",
+      db.plants?.length || 0,
+      "flowers:",
+      db.flowers?.length || 0
+    );
 
     let identifiedSpecies = species || "Unknown";
     // Start with user-provided subjectType, or use auto-classification
@@ -1917,14 +1924,24 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log(`✅ Identified species: ${identifiedSpecies}`);
 
         // ✅ CLASSIFY as flower or plant based on species ONLY if user didn't explicitly specify
-        if (!subjectType || (subjectType !== "flower" && subjectType !== "flowers" && subjectType !== "plant" && subjectType !== "plants")) {
+        if (
+          !subjectType ||
+          (subjectType !== "flower" &&
+            subjectType !== "flowers" &&
+            subjectType !== "plant" &&
+            subjectType !== "plants")
+        ) {
           const classification = classifyAsFlowerOrPlant(identifiedSpecies);
           determinedType = classification;
           console.log(`✅ Auto-classified as: ${classification}`);
         } else {
-          console.log(`ℹ️  Using user-specified subjectType: ${determinedType}`);
+          console.log(
+            `ℹ️  Using user-specified subjectType: ${determinedType}`
+          );
         }
-        console.log(`✅ Classified as: ${classification} (type: ${typeof classification})`);
+        console.log(
+          `✅ Classified as: ${classification} (type: ${typeof classification})`
+        );
       }
     } catch (e) {
       console.warn(`⚠️  Species identification failed: ${e.message}`);
@@ -1932,11 +1949,26 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     let plant = null;
     let collection = determinedType;
-    console.log("🔑 Final collection value:", collection, "type:", typeof collection, "db keys:", Object.keys(db));
+    console.log(
+      "🔑 Final collection value:",
+      collection,
+      "type:",
+      typeof collection,
+      "db keys:",
+      Object.keys(db)
+    );
 
     if (!db[collection]) {
-      console.error(`❌ db[${collection}] is undefined! Available keys:`, Object.keys(db));
-      return res.status(500).json({ success: false, error: `Collection '${collection}' not found in database` });
+      console.error(
+        `❌ db[${collection}] is undefined! Available keys:`,
+        Object.keys(db)
+      );
+      return res
+        .status(500)
+        .json({
+          success: false,
+          error: `Collection '${collection}' not found in database`,
+        });
     }
 
     if (subjectId) {
@@ -2047,7 +2079,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     console.log("🔄 Starting background enrichment...");
     enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
   } catch (e) {
-    console.error("❌ /upload endpoint error:", e && (e.stack || e.message || e));
+    console.error(
+      "❌ /upload endpoint error:",
+      e && (e.stack || e.message || e)
+    );
     // If DEBUG_SHOW_ERRORS is set, include the stack in the response for debugging
     const showErrors = process.env.DEBUG_SHOW_ERRORS === "1";
     const payload = { success: false, error: "Internal server error." };
@@ -2057,7 +2092,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       const logPath = path.join(DATA_DIR, "server-errors.log");
       fs.appendFileSync(
         logPath,
-        new Date().toISOString() + " /upload error: " + String(e && (e.stack || e.message || e)) + "\n"
+        new Date().toISOString() +
+          " /upload error: " +
+          String(e && (e.stack || e.message || e)) +
+          "\n"
       );
     } catch (ee) {
       console.error("Failed to write server error log:", ee && ee.message);
@@ -2989,7 +3027,10 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+        console.warn(
+          "[DELETE] Failed to remove from Supabase Storage:",
+          e.message
+        );
       }
     }
 
@@ -3074,7 +3115,10 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+        console.warn(
+          "[DELETE] Failed to remove from Supabase Storage:",
+          e.message
+        );
       }
     }
 
