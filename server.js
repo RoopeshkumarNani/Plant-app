@@ -772,10 +772,6 @@ async function writeDB(obj) {
     throw e;
   }
 }
-      throw e2;
-    }
-  }
-}
 
 // Simple Server-Sent Events (SSE) manager for notifying clients when background
 // enrichment completes. This is lightweight and suitable for single-recipient installs.
