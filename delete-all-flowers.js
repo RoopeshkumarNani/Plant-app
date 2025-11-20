@@ -36,22 +36,13 @@ async function deleteAllFlowers() {
       console.log(`🗑️  Deleting flower: ${flowerId}`);
 
       // Delete conversations
-      await supabase
-        .from("conversations")
-        .delete()
-        .eq("flower_id", flowerId);
+      await supabase.from("conversations").delete().eq("flower_id", flowerId);
 
       // Delete images
-      await supabase
-        .from("images")
-        .delete()
-        .eq("flower_id", flowerId);
+      await supabase.from("images").delete().eq("flower_id", flowerId);
 
       // Delete flower
-      await supabase
-        .from("flowers")
-        .delete()
-        .eq("id", flowerId);
+      await supabase.from("flowers").delete().eq("id", flowerId);
 
       console.log(`✅ Deleted!\n`);
     }
@@ -59,7 +50,6 @@ async function deleteAllFlowers() {
     console.log("🎉 All flowers deleted successfully!");
     console.log("");
     console.log("Now refresh your page and the frame will be gone!");
-
   } catch (error) {
     console.error("❌ Error:", error.message);
   }

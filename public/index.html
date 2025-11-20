@@ -2418,11 +2418,11 @@
         // ============================================================================
         // CACHE BUSTING SYSTEM - Prevent stale cached data from displaying
         // ============================================================================
-        
+
         // Version number for cache invalidation - increment when data model changes
         const CACHE_VERSION = '2.0';
         const CACHE_KEY_PREFIX = `plantapp_v${CACHE_VERSION}_`;
-        
+
         // Clear all old cache versions on page load
         function clearObsoleteCaches() {
             const keys = Object.keys(localStorage);
@@ -2435,7 +2435,7 @@
             });
         }
         clearObsoleteCaches();
-        
+
         // Function to get data with cache-busting timestamp
         function getCachedData(key, defaultValue = null) {
             const versionedKey = CACHE_KEY_PREFIX + key;
@@ -2450,7 +2450,7 @@
             }
             return defaultValue;
         }
-        
+
         // Function to set data with cache-busting timestamp
         function setCachedData(key, value) {
             const versionedKey = CACHE_KEY_PREFIX + key;
@@ -2460,7 +2460,7 @@
                 console.warn(`Failed to cache data for ${key}:`, e);
             }
         }
-        
+
         // Clear specific cached plant/flower data to force refresh
         function invalidateDataCache() {
             console.log('🔄 Invalidating all plant/flower caches');
@@ -2468,7 +2468,7 @@
             localStorage.removeItem(CACHE_KEY_PREFIX + 'flowers');
             localStorage.removeItem(CACHE_KEY_PREFIX + 'lastFetch');
         }
-        
+
         // Auto-invalidate cache every 30 seconds to keep data fresh
         setInterval(() => {
             invalidateDataCache();
@@ -3369,7 +3369,7 @@
 
         // Helper: Fetch with retry and XMLHttpRequest fallback
         async function fetchWithFallback(url, options = {}) {
-            const maxRetries = 3;
+            const maxRetries = 2;  // Reduced from 3
             let lastError = null;
 
             // Add cache-busting query parameter to all requests
@@ -3390,10 +3390,16 @@
             };
             const fetchOptions = { ...options, headers };
 
-            // Try fetch first (with retries)
+            // Try fetch first (with retries and timeout)
             for (let i = 0; i < maxRetries; i++) {
                 try {
-                    const res = await fetch(fullUrl, fetchOptions);
+                    // Create abort controller for timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);  // 5 second timeout
+                    
+                    const res = await fetch(fullUrl, { ...fetchOptions, signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    
                     if (res.ok) return res;
                     // If 404, don't retry
                     if (res.status === 404) return res;
