@@ -2437,6 +2437,7 @@ app.listen(PORT, () => {
   );
   console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
   console.log(`   - Using Supabase: ${USE_SUPABASE}`);
+  console.log(`   - Build timestamp: ${new Date().toISOString()}`);
 });
 
 // Reply endpoint: user sends text and server will save it and optionally call LLM to produce plant reply
