@@ -1162,7 +1162,7 @@ async function analyzeGreenArea(imagePath) {
 
 // Detect if a species is a flower or plant based on botanical characteristics
 function classifyAsFlowerOrPlant(speciesName) {
-  if (!speciesName) return "plant"; // default to plant if unknown
+  if (!speciesName) return "plants"; // default to plant if unknown
 
   const speciesLower = speciesName.toLowerCase();
 
@@ -1245,12 +1245,12 @@ function classifyAsFlowerOrPlant(speciesName) {
 
   for (const keyword of flowerKeywords) {
     if (speciesLower.includes(keyword)) {
-      return "flower";
+      return "flowers";
     }
   }
 
   // Default to plant for houseplants, foliage plants, etc.
-  return "plant";
+  return "plants";
 }
 
 async function callPlantNet(imagePath) {
