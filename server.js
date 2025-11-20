@@ -1901,11 +1901,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     console.log("📋 DB after init - plants:", db.plants?.length || 0, "flowers:", db.flowers?.length || 0);
 
     let identifiedSpecies = species || "Unknown";
+    // Start with user-provided subjectType, or use auto-classification
     let determinedType =
       subjectType === "flower" || subjectType === "flowers"
         ? "flowers"
         : "plants";
-    console.log("🏷️  Initial determinedType:", determinedType);
+    console.log("🏷️  Initial determinedType from user input:", determinedType);
 
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
@@ -1915,9 +1916,14 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         identifiedSpecies = identification.species;
         console.log(`✅ Identified species: ${identifiedSpecies}`);
 
-        // ✅ CLASSIFY as flower or plant based on species
-        const classification = classifyAsFlowerOrPlant(identifiedSpecies);
-        determinedType = classification;
+        // ✅ CLASSIFY as flower or plant based on species ONLY if user didn't explicitly specify
+        if (!subjectType || (subjectType !== "flower" && subjectType !== "flowers" && subjectType !== "plant" && subjectType !== "plants")) {
+          const classification = classifyAsFlowerOrPlant(identifiedSpecies);
+          determinedType = classification;
+          console.log(`✅ Auto-classified as: ${classification}`);
+        } else {
+          console.log(`ℹ️  Using user-specified subjectType: ${determinedType}`);
+        }
         console.log(`✅ Classified as: ${classification} (type: ${typeof classification})`);
       }
     } catch (e) {
