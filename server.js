@@ -2033,6 +2033,16 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     const showErrors = process.env.DEBUG_SHOW_ERRORS === "1";
     const payload = { success: false, error: "Internal server error." };
     if (showErrors) payload.details = String(e && (e.stack || e.message || e));
+    // Persist the error to server-errors.log for remote diagnosis
+    try {
+      const logPath = path.join(DATA_DIR, "server-errors.log");
+      fs.appendFileSync(
+        logPath,
+        new Date().toISOString() + " /upload error: " + String(e && (e.stack || e.message || e)) + "\n"
+      );
+    } catch (ee) {
+      console.error("Failed to write server error log:", ee && ee.message);
+    }
     res.status(500).json(payload);
   }
 });
