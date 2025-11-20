@@ -3369,7 +3369,7 @@
 
         // Helper: Fetch with retry and XMLHttpRequest fallback
         async function fetchWithFallback(url, options = {}) {
-            const maxRetries = 2;  // Reduced from 3
+            const maxRetries = 1;  // Single attempt - if it fails, use XHR fallback immediately
             let lastError = null;
 
             // Add cache-busting query parameter to all requests
@@ -3390,31 +3390,25 @@
             };
             const fetchOptions = { ...options, headers };
 
-            // Try fetch first (with retries and timeout)
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    // Create abort controller for timeout
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 5000);  // 5 second timeout
-                    
-                    const res = await fetch(fullUrl, { ...fetchOptions, signal: controller.signal });
-                    clearTimeout(timeoutId);
-                    
-                    if (res.ok) return res;
-                    // If 404, don't retry
-                    if (res.status === 404) return res;
-                    lastError = new Error(`HTTP ${res.status}`);
-                } catch (e) {
-                    lastError = e;
-                    if (i < maxRetries - 1) {
-                        // Wait before retry (exponential backoff)
-                        await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, i)));
-                    }
-                }
+            // Try fetch first (with generous timeout for slow connections)
+            try {
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);  // 10 second timeout (increased from 5)
+                
+                const res = await fetch(fullUrl, { ...fetchOptions, signal: controller.signal });
+                clearTimeout(timeoutId);
+                
+                if (res.ok) return res;
+                // If 404, don't retry
+                if (res.status === 404) return res;
+                lastError = new Error(`HTTP ${res.status}`);
+            } catch (e) {
+                lastError = e;
             }
 
             // If fetch failed, try XMLHttpRequest as fallback
-            console.warn('Fetch failed, trying XMLHttpRequest fallback...');
+            console.warn('Fetch failed, trying XMLHttpRequest fallback...', lastError?.message);
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.open(options.method || 'GET', fullUrl, true);
