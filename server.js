@@ -555,10 +555,11 @@ async function readDB() {
   try {
     if (!USE_SUPABASE) {
       // Fallback to local JSON file
-      const dbPath = process.env.NODE_ENV === 'production' 
-        ? "/app/data/db.json"
-        : path.join(__dirname, "data", "db.json");
-      
+      const dbPath =
+        process.env.NODE_ENV === "production"
+          ? "/app/data/db.json"
+          : path.join(__dirname, "data", "db.json");
+
       if (!fs.existsSync(dbPath)) {
         console.log("DB file not found - returning empty");
         return { plants: [], flowers: [] };
@@ -572,54 +573,61 @@ async function readDB() {
       { data: plants, error: plantsError },
       { data: flowers, error: flowersError },
       { data: images, error: imagesError },
-      { data: conversations, error: conversationsError }
+      { data: conversations, error: conversationsError },
     ] = await Promise.all([
       supabase.from("plants").select("*"),
       supabase.from("flowers").select("*"),
       supabase.from("images").select("*"),
-      supabase.from("conversations").select("*")
+      supabase.from("conversations").select("*"),
     ]);
 
     if (plantsError || flowersError || imagesError || conversationsError) {
       console.error(
         "Error reading from Supabase:",
-        plantsError?.message || flowersError?.message || imagesError?.message || conversationsError?.message
+        plantsError?.message ||
+          flowersError?.message ||
+          imagesError?.message ||
+          conversationsError?.message
       );
       return { plants: [], flowers: [] };
     }
 
     // Reconstruct nested structure from relational data
-    const plantsWithData = (plants || []).map(plant => ({
+    const plantsWithData = (plants || []).map((plant) => ({
       ...plant,
-      images: (images || []).filter(img => img.plant_id === plant.id),
-      conversations: (conversations || []).filter(conv => conv.plant_id === plant.id),
+      images: (images || []).filter((img) => img.plant_id === plant.id),
+      conversations: (conversations || []).filter(
+        (conv) => conv.plant_id === plant.id
+      ),
       profile: {
         adoptedDate: plant.adopted_date,
         userCareStyle: plant.user_care_style,
         preferredLight: plant.preferred_light,
         wateringFrequency: plant.watering_frequency,
         healthStatus: plant.health_status,
-        careScore: plant.care_score
-      }
+        careScore: plant.care_score,
+      },
     }));
 
-    const flowersWithData = (flowers || []).map(flower => ({
+    const flowersWithData = (flowers || []).map((flower) => ({
       ...flower,
-      images: (images || []).filter(img => img.flower_id === flower.id),
-      conversations: (conversations || []).filter(conv => conv.flower_id === flower.id),
+      images: (images || []).filter((img) => img.flower_id === flower.id),
+      conversations: (conversations || []).filter(
+        (conv) => conv.flower_id === flower.id
+      ),
       profile: {
         adoptedDate: flower.adopted_date,
         userCareStyle: flower.user_care_style,
         preferredLight: flower.preferred_light,
         wateringFrequency: flower.watering_frequency,
         healthStatus: flower.health_status,
-        careScore: flower.care_score
-      }
+        careScore: flower.care_score,
+      },
     }));
 
     return {
       plants: plantsWithData,
-      flowers: flowersWithData
+      flowers: flowersWithData,
     };
   } catch (e) {
     console.error("Error reading DB:", e.message);
@@ -631,10 +639,11 @@ async function writeDB(obj) {
   try {
     if (!USE_SUPABASE) {
       // Fallback to local JSON file
-      const dbPath = process.env.NODE_ENV === 'production'
-        ? "/app/data/db.json"
-        : path.join(__dirname, "data", "db.json");
-      
+      const dbPath =
+        process.env.NODE_ENV === "production"
+          ? "/app/data/db.json"
+          : path.join(__dirname, "data", "db.json");
+
       const dataDir = path.dirname(dbPath);
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -660,11 +669,11 @@ async function writeDB(obj) {
           preferred_light: plant.profile?.preferredLight || null,
           watering_frequency: plant.profile?.wateringFrequency || null,
         };
-        
+
         const { error: plantError } = await supabase
           .from("plants")
           .upsert(plantData, { onConflict: "id" });
-        
+
         if (plantError) {
           console.error("Error upserting plant:", plantError.message);
           continue;
@@ -685,7 +694,7 @@ async function writeDB(obj) {
               area: img.area || null,
               file_size: img.fileSize || null,
               width: img.width || null,
-              height: img.height || null
+              height: img.height || null,
             };
             await supabase.from("images").upsert(imgData, { onConflict: "id" });
           }
@@ -704,9 +713,11 @@ async function writeDB(obj) {
               text_en: conv.text_en || null,
               text_kn: conv.text_kn || null,
               time: conv.time,
-              growth_delta: conv.growthDelta || null
+              growth_delta: conv.growthDelta || null,
             };
-            await supabase.from("conversations").upsert(convData, { onConflict: "id" });
+            await supabase
+              .from("conversations")
+              .upsert(convData, { onConflict: "id" });
           }
         }
       }
@@ -728,11 +739,11 @@ async function writeDB(obj) {
           preferred_light: flower.profile?.preferredLight || null,
           watering_frequency: flower.profile?.wateringFrequency || null,
         };
-        
+
         const { error: flowerError } = await supabase
           .from("flowers")
           .upsert(flowerData, { onConflict: "id" });
-        
+
         if (flowerError) {
           console.error("Error upserting flower:", flowerError.message);
           continue;
@@ -753,7 +764,7 @@ async function writeDB(obj) {
               area: img.area || null,
               file_size: img.fileSize || null,
               width: img.width || null,
-              height: img.height || null
+              height: img.height || null,
             };
             await supabase.from("images").upsert(imgData, { onConflict: "id" });
           }
@@ -772,9 +783,11 @@ async function writeDB(obj) {
               text_en: conv.text_en || null,
               text_kn: conv.text_kn || null,
               time: conv.time,
-              growth_delta: conv.growthDelta || null
+              growth_delta: conv.growthDelta || null,
             };
-            await supabase.from("conversations").upsert(convData, { onConflict: "id" });
+            await supabase
+              .from("conversations")
+              .upsert(convData, { onConflict: "id" });
           }
         }
       }
@@ -785,9 +798,10 @@ async function writeDB(obj) {
     console.error("Error writing DB:", e.message);
     // Fall back to local file if Supabase fails
     try {
-      const dbPath = process.env.NODE_ENV === 'production'
-        ? "/app/data/db.json"
-        : path.join(__dirname, "data", "db.json");
+      const dbPath =
+        process.env.NODE_ENV === "production"
+          ? "/app/data/db.json"
+          : path.join(__dirname, "data", "db.json");
       const dataDir = path.dirname(dbPath);
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -1881,7 +1895,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     db.flowers = db.flowers || [];
 
     let identifiedSpecies = species || "Unknown";
-    let determinedType = (subjectType === "flower" || subjectType === "flowers") ? "flowers" : "plants";
+    let determinedType =
+      subjectType === "flower" || subjectType === "flowers"
+        ? "flowers"
+        : "plants";
 
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
@@ -1890,7 +1907,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       if (identification && identification.species) {
         identifiedSpecies = identification.species;
         console.log(`✅ Identified species: ${identifiedSpecies}`);
-        
+
         // ✅ CLASSIFY as flower or plant based on species
         const classification = classifyAsFlowerOrPlant(identifiedSpecies);
         determinedType = classification;
@@ -1922,7 +1939,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         conversations: [],
       };
       db[collection].push(plant);
-      console.log(`✅ Created new ${collection.slice(0, -1)} in correct section`);
+      console.log(
+        `✅ Created new ${collection.slice(0, -1)} in correct section`
+      );
     }
 
     const imgEntry = {
@@ -1930,7 +1949,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
-      firebaseUrl: `${req.protocol}://${req.get("host")}/uploads/${path.basename(file.path)}`,
+      firebaseUrl: `${req.protocol}://${req.get(
+        "host"
+      )}/uploads/${path.basename(file.path)}`,
       supabaseUrl: null,
       storagePath: null,
     };
@@ -1951,25 +1972,42 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       try {
         console.log("📤 Uploading to Supabase Storage (SYNCHRONOUS)...");
         const webpFilename = imgEntry.id + "-image.webp";
-        console.log(`   Converting JPEG (${fileBuffer.length} bytes) to WebP...`);
-        const webpBuffer = await sharp(fileBuffer).webp({ quality: 80 }).toBuffer();
+        console.log(
+          `   Converting JPEG (${fileBuffer.length} bytes) to WebP...`
+        );
+        const webpBuffer = await sharp(fileBuffer)
+          .webp({ quality: 80 })
+          .toBuffer();
         console.log(`   WebP size: ${webpBuffer.length} bytes`);
-        console.log(`   Uploading to Supabase bucket 'images' with filename: ${webpFilename}`);
-        const publicUrl = await uploadFileToSupabaseStorage(webpBuffer, webpFilename);
+        console.log(
+          `   Uploading to Supabase bucket 'images' with filename: ${webpFilename}`
+        );
+        const publicUrl = await uploadFileToSupabaseStorage(
+          webpBuffer,
+          webpFilename
+        );
         if (publicUrl) {
           imgEntry.supabaseUrl = publicUrl;
           imgEntry.storagePath = webpFilename;
           console.log("✅ Supabase upload successful, URL:", publicUrl);
         } else {
-          console.warn("⚠️  Supabase upload returned null URL - will use firebaseUrl fallback");
+          console.warn(
+            "⚠️  Supabase upload returned null URL - will use firebaseUrl fallback"
+          );
           imgEntry.supabaseUrl = null;
         }
       } catch (e) {
-        console.error("❌ SYNCHRONOUS Supabase upload failed:", e.message, e.stack);
+        console.error(
+          "❌ SYNCHRONOUS Supabase upload failed:",
+          e.message,
+          e.stack
+        );
         console.warn("   Will use firebaseUrl fallback:", imgEntry.firebaseUrl);
       }
     } else {
-      console.warn("⚠️  fileBuffer is null - skipping Supabase upload, will use firebaseUrl");
+      console.warn(
+        "⚠️  fileBuffer is null - skipping Supabase upload, will use firebaseUrl"
+      );
     }
 
     // ✅ SAVE TO DATABASE IMMEDIATELY (in correct section with correct owner)
@@ -1989,7 +2027,6 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // Run enrichment in the background (analyzes green area, generates better response, etc)
     console.log("🔄 Starting background enrichment...");
     enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
-
   } catch (e) {
     console.error("❌ /upload endpoint error:", e.message, e.stack);
     res.status(500).json({ success: false, error: "Internal server error." });
@@ -1999,9 +2036,17 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 // ============================================================================
 // DATA ENRICHMENT (run in background after upload)
 // ============================================================================
-async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollection, localFilePath) {
+async function enrichImageAndRespond(
+  plant,
+  imgEntry,
+  msgEntry,
+  subjectCollection,
+  localFilePath
+) {
   try {
-    console.log(`[ENRICH] Starting background enrichment for image ${imgEntry.id}`);
+    console.log(
+      `[ENRICH] Starting background enrichment for image ${imgEntry.id}`
+    );
     const db = await readDB();
     const subject = findSubjectById(db, plant.id);
     if (!subject) {
@@ -2054,9 +2099,15 @@ async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollectio
       A new photo of me has been uploaded.
       My species is: ${subject.species}.
       My nickname is: ${subject.nickname || "not set"}.
-      The photo was taken at: ${new Date(imgEntry.uploadedAt).toLocaleTimeString()}.
-      My estimated green area in this photo is: ${Math.round((imgEntry.area || 0) * 100)}%.
-      My growth since the last photo is: ${growthDelta ? Math.round(growthDelta * 100) + "%" : "not applicable"}.
+      The photo was taken at: ${new Date(
+        imgEntry.uploadedAt
+      ).toLocaleTimeString()}.
+      My estimated green area in this photo is: ${Math.round(
+        (imgEntry.area || 0) * 100
+      )}%.
+      My growth since the last photo is: ${
+        growthDelta ? Math.round(growthDelta * 100) + "%" : "not applicable"
+      }.
       My current profile:\n${buildProfileSummary(subject)}
       Your task: Write a short, natural, first-person reply to the user.
     `;
@@ -2068,12 +2119,15 @@ async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollectio
     }
 
     // 6. Update the database with enriched data
-    const targetCollection = subjectCollection === "flowers" ? db.flowers : db.plants;
+    const targetCollection =
+      subjectCollection === "flowers" ? db.flowers : db.plants;
     const subjIndex = targetCollection.findIndex((p) => p.id === subject.id);
     if (subjIndex > -1) {
       // Make sure the specific image and conversation are updated
-      const imgIndex = targetCollection[subjIndex].images.findIndex(i => i.id === imgEntry.id);
-      if(imgIndex > -1) {
+      const imgIndex = targetCollection[subjIndex].images.findIndex(
+        (i) => i.id === imgEntry.id
+      );
+      if (imgIndex > -1) {
         // Preserve URLs when updating image entry
         const existingImg = targetCollection[subjIndex].images[imgIndex];
         imgEntry.firebaseUrl = imgEntry.firebaseUrl || existingImg.firebaseUrl;
@@ -2081,9 +2135,12 @@ async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollectio
         imgEntry.storagePath = imgEntry.storagePath || existingImg.storagePath;
         targetCollection[subjIndex].images[imgIndex] = imgEntry;
       }
-      const msgIndex = targetCollection[subjIndex].conversations.findIndex(c => c.id === msgEntry.id);
-      if(msgIndex > -1) targetCollection[subjIndex].conversations[msgIndex] = msgEntry;
-      
+      const msgIndex = targetCollection[subjIndex].conversations.findIndex(
+        (c) => c.id === msgEntry.id
+      );
+      if (msgIndex > -1)
+        targetCollection[subjIndex].conversations[msgIndex] = msgEntry;
+
       await writeDB(db);
       console.log(`[ENRICH] Database updated for subject ${subject.id}`);
     }
@@ -2096,21 +2153,23 @@ async function enrichImageAndRespond(plant, imgEntry, msgEntry, subjectCollectio
       conversation: msgEntry,
     });
     console.log(`[ENRICH] SSE notification sent for ${subject.id}`);
-
   } catch (e) {
     console.error(`[ENRICH] Background enrichment failed: ${e.message}`);
   } finally {
-      // 8. Clean up the local file
-      setTimeout(() => {
-        try {
-          if (fs.existsSync(localFilePath)) {
-            fs.unlinkSync(localFilePath);
-            console.log("[ENRICH] Cleaned up local upload:", path.basename(localFilePath));
-          }
-        } catch (e) {
-          console.warn("[ENRICH] Could not delete temp file:", e.message);
+    // 8. Clean up the local file
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(localFilePath)) {
+          fs.unlinkSync(localFilePath);
+          console.log(
+            "[ENRICH] Cleaned up local upload:",
+            path.basename(localFilePath)
+          );
         }
-      }, 30 * 1000); // 30-second delay
+      } catch (e) {
+        console.warn("[ENRICH] Could not delete temp file:", e.message);
+      }
+    }, 30 * 1000); // 30-second delay
   }
 }
 
@@ -2128,9 +2187,7 @@ app.post("/reply", requireToken, async (req, res) => {
     const db = await readDB();
     const plant = findSubjectById(db, plantId);
     if (!plant)
-      return res
-        .status(404)
-        .json({ success: false, error: "Plant not found" });
+      return res.status(404).json({ success: false, error: "Plant not found" });
 
     plant.conversations = plant.conversations || [];
     const userMessage = {
@@ -2349,9 +2406,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server listening on port ${PORT}`);
   console.log(`   - Local: http://localhost:${PORT}`);
   console.log(
-    `   - Production: ${
-      process.env.RENDER_EXTERNAL_URL || "not-on-render"
-    }`
+    `   - Production: ${process.env.RENDER_EXTERNAL_URL || "not-on-render"}`
   );
   console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
   console.log(`   - Using Supabase: ${USE_SUPABASE}`);
@@ -2885,20 +2940,23 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
       filename: img.filename,
       imgId: img.id,
     });
-    
+
     // Delete from Supabase Storage if URL exists
     if (img.supabase_url) {
       try {
         // Extract filename from Supabase URL
-        const urlParts = img.supabase_url.split('/');
+        const urlParts = img.supabase_url.split("/");
         const storageFilename = urlParts[urlParts.length - 1];
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+        console.warn(
+          "[DELETE] Failed to remove from Supabase Storage:",
+          e.message
+        );
       }
     }
-    
+
     // remove file if exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
@@ -2941,20 +2999,23 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
       filename: img.filename,
       imgId: img.id,
     });
-    
+
     // Delete from Supabase Storage if URL exists
     if (img.supabase_url) {
       try {
         // Extract filename from Supabase URL
-        const urlParts = img.supabase_url.split('/');
+        const urlParts = img.supabase_url.split("/");
         const storageFilename = urlParts[urlParts.length - 1];
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
+        console.warn(
+          "[DELETE] Failed to remove from Supabase Storage:",
+          e.message
+        );
       }
     }
-    
+
     // Delete local file if it exists
     try {
       const full = path.join(UPLOAD_DIR, img.filename);
@@ -3765,27 +3826,27 @@ app.post("/admin/cleanup-all", requireToken, async (req, res) => {
 
     // 2. Clear database (delete all data)
     console.log("Clearing database...");
-    
+
     // Delete in correct order (foreign key constraints)
     await supabase.from("conversations").delete().neq("id", "");
     console.log("  ✓ Deleted all conversations");
-    
+
     await supabase.from("images").delete().neq("id", "");
     console.log("  ✓ Deleted all images");
-    
+
     await supabase.from("flowers").delete().neq("id", "");
     console.log("  ✓ Deleted all flowers");
-    
+
     await supabase.from("plants").delete().neq("id", "");
     console.log("  ✓ Deleted all plants");
-    
+
     console.log("✅ Database cleaned");
 
     res.json({
       success: true,
       message: "All data cleaned successfully",
-      filesDeleted: fs.existsSync(uploadDir) 
-        ? fs.readdirSync(uploadDir).filter(f => f !== ".disk-test").length 
+      filesDeleted: fs.existsSync(uploadDir)
+        ? fs.readdirSync(uploadDir).filter((f) => f !== ".disk-test").length
         : 0,
     });
   } catch (error) {
@@ -3797,3 +3858,28 @@ app.post("/admin/cleanup-all", requireToken, async (req, res) => {
   }
 });
 
+// DEBUG: expose recent server error logs (invite token required)
+app.get("/admin/server-errors", requireToken, (req, res) => {
+  try {
+    const serverLog = path.join(DATA_DIR, "server-errors.log");
+    const replyLog = path.join(DATA_DIR, "reply-debug.log");
+
+    function tailFile(p, maxChars = 4000) {
+      if (!fs.existsSync(p)) return "";
+      try {
+        const s = fs.readFileSync(p, "utf8");
+        return s.length > maxChars ? s.slice(-maxChars) : s;
+      } catch (e) {
+        return `Could not read ${p}: ${e.message}`;
+      }
+    }
+
+    res.json({
+      serverErrors: tailFile(serverLog),
+      replyDebug: tailFile(replyLog),
+    });
+  } catch (e) {
+    console.error("/admin/server-errors failed", e && e.message);
+    res.status(500).json({ error: e && e.message });
+  }
+});
