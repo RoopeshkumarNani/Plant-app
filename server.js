@@ -466,17 +466,32 @@ if (!fs.existsSync(DB_FILE))
 // Enable CORS for cross-origin requests (Firebase to Render)
 // MUST be before static routes so it applies to /uploads
 app.use((req, res, next) => {
-  const origin = req.headers.origin || "*";
-  res.header("Access-Control-Allow-Origin", origin);
+  const origin = req.headers.origin;
+  
+  // Only allow specific origins or Firebase hosting
+  const allowedOrigins = [
+    'https://my-soulmates.web.app',
+    'https://my-soulmates.firebaseapp.com',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000'
+  ];
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+  } else if (!origin) {
+    // Same-origin requests or non-browser requests
+    res.header("Access-Control-Allow-Origin", "*");
+  }
+  
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, x-invite-token"
   );
-  res.header("Access-Control-Allow-Credentials", "true");
+  
   // Allow images to be loaded cross-origin with proper headers
   res.header("Cross-Origin-Resource-Policy", "cross-origin");
-  res.header("Cross-Origin-Opener-Policy", "unsafe-none");
   
   // HTTPS enforcement: redirect insecure requests if needed
   if (process.env.NODE_ENV === 'production' && req.header('x-forwarded-proto') === 'http') {
