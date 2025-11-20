@@ -3527,7 +3527,7 @@
                             try {
                                 const filename = del.getAttribute('data-fn');
                                 const imgId = del.getAttribute('data-img');
-                                const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : '';
+                                const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : 'https://plant-app-backend-h28h.onrender.com';
                                 // Try plants delete first, if 404 then try flowers delete
                                 let url = baseUrl + `/plants/${p.id}/images/${imgId}`;
                                 console.log('DELETE request URL:', url);
@@ -3543,7 +3543,7 @@
                                 // remove this manage-row and any message UI immediately
                                 try { row.remove(); } catch (e) { }
                                 removeImageUI(filename);
-                                await loadPlants();
+                                await loadFlowers();
                                 openChat(p.id);
                             } catch (e) { console.error(e); alert('Delete failed: ' + (e && e.message)); }
                         });
