@@ -3903,21 +3903,33 @@ app.post("/admin/cleanup-all", requireToken, async (req, res) => {
       console.log(`✅ Deleted ${deletedCount} image files from /uploads/`);
     }
 
-    // 2. Clear database (delete all data)
+    // 2. Clear database (delete all data) - use fetch-then-delete approach for UUID fields
     console.log("Clearing database...");
 
     // Delete in correct order (foreign key constraints)
-    await supabase.from("conversations").delete().neq("id", "");
-    console.log("  ✓ Deleted all conversations");
+    const { data: convs } = await supabase.from("conversations").select("id");
+    if (convs && convs.length > 0) {
+      await supabase.from("conversations").delete().in("id", convs.map(c => c.id));
+      console.log(`  ✓ Deleted ${convs.length} conversations`);
+    }
 
-    await supabase.from("images").delete().neq("id", "");
-    console.log("  ✓ Deleted all images");
+    const { data: imgs } = await supabase.from("images").select("id");
+    if (imgs && imgs.length > 0) {
+      await supabase.from("images").delete().in("id", imgs.map(i => i.id));
+      console.log(`  ✓ Deleted ${imgs.length} images`);
+    }
 
-    await supabase.from("flowers").delete().neq("id", "");
-    console.log("  ✓ Deleted all flowers");
+    const { data: flowers } = await supabase.from("flowers").select("id");
+    if (flowers && flowers.length > 0) {
+      await supabase.from("flowers").delete().in("id", flowers.map(f => f.id));
+      console.log(`  ✓ Deleted ${flowers.length} flowers`);
+    }
 
-    await supabase.from("plants").delete().neq("id", "");
-    console.log("  ✓ Deleted all plants");
+    const { data: plants } = await supabase.from("plants").select("id");
+    if (plants && plants.length > 0) {
+      await supabase.from("plants").delete().in("id", plants.map(p => p.id));
+      console.log(`  ✓ Deleted ${plants.length} plants`);
+    }
 
     console.log("✅ Database cleaned");
 
