@@ -19,7 +19,7 @@
         // Fallback API_BASE_URL if config.js didn't load
         if (typeof API_BASE_URL === 'undefined') {
             const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://plant-app-backend-h28h.onrender.com";
+            window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev";
             console.log("⚠️ Config.js not loaded, using fallback API_BASE_URL:", window.API_BASE_URL);
         }
     </script>
@@ -3129,7 +3129,7 @@
             // Use window.API_BASE_URL if available (check window scope explicitly)
             let baseUrl = (typeof window !== 'undefined' && window.API_BASE_URL)
                 ? window.API_BASE_URL
-                : 'https://plant-app-backend-h28h.onrender.com';
+                : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
 
             const url = baseUrl + '/uploads/' + filename;
             console.log('📸 Image URL (with baseUrl):', url);
