@@ -549,26 +549,13 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Database functions - use Supabase relational schema
-const USE_SUPABASE = process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY;
+// Database functions - ALWAYS use Supabase relational schema (fully migrated)
+const USE_SUPABASE = true;
+console.log("🗄️  Using Supabase for all data storage (fully migrated)");
 
 async function readDB() {
   try {
-    if (!USE_SUPABASE) {
-      // Fallback to local JSON file
-      const dbPath =
-        process.env.NODE_ENV === "production"
-          ? "/app/data/db.json"
-          : path.join(__dirname, "data", "db.json");
-
-      if (!fs.existsSync(dbPath)) {
-        console.log("DB file not found - returning empty");
-        return { plants: [], flowers: [] };
-      }
-      const content = fs.readFileSync(dbPath, "utf-8");
-      return JSON.parse(content);
-    }
-
+    // Always use Supabase now (fully migrated)
     // Fetch from Supabase relational tables in parallel
     const [
       { data: plants, error: plantsError },
@@ -584,7 +571,7 @@ async function readDB() {
 
     if (plantsError || flowersError || imagesError || conversationsError) {
       console.error(
-        "Error reading from Supabase:",
+        "❌ Error reading from Supabase:",
         plantsError?.message ||
           flowersError?.message ||
           imagesError?.message ||
@@ -631,29 +618,14 @@ async function readDB() {
       flowers: flowersWithData,
     };
   } catch (e) {
-    console.error("Error reading DB:", e.message);
+    console.error("❌ Error reading from Supabase:", e.message);
     return { plants: [], flowers: [] };
   }
 }
 
 async function writeDB(obj) {
   try {
-    if (!USE_SUPABASE) {
-      // Fallback to local JSON file
-      const dbPath =
-        process.env.NODE_ENV === "production"
-          ? "/app/data/db.json"
-          : path.join(__dirname, "data", "db.json");
-
-      const dataDir = path.dirname(dbPath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
-      console.log("✅ Database saved to local file");
-      return;
-    }
-
+    // Always use Supabase (fully migrated)
     // Upsert plants to Supabase
     if (obj.plants && Array.isArray(obj.plants)) {
       for (const plant of obj.plants) {
@@ -676,7 +648,7 @@ async function writeDB(obj) {
           .upsert(plantData, { onConflict: "id" });
 
         if (plantError) {
-          console.error("Error upserting plant:", plantError.message);
+          console.error("❌ Error upserting plant:", plantError.message);
           continue;
         }
 
@@ -697,7 +669,8 @@ async function writeDB(obj) {
               width: img.width || null,
               height: img.height || null,
             };
-            await supabase.from("images").upsert(imgData, { onConflict: "id" });
+            const { error: imgError } = await supabase.from("images").upsert(imgData, { onConflict: "id" });
+            if (imgError) console.error("❌ Error upserting image:", imgError.message);
           }
         }
 
@@ -716,9 +689,8 @@ async function writeDB(obj) {
               time: conv.time,
               growth_delta: conv.growthDelta || null,
             };
-            await supabase
-              .from("conversations")
-              .upsert(convData, { onConflict: "id" });
+            const { error: convError } = await supabase.from("conversations").upsert(convData, { onConflict: "id" });
+            if (convError) console.error("❌ Error upserting conversation:", convError.message);
           }
         }
       }
@@ -746,7 +718,7 @@ async function writeDB(obj) {
           .upsert(flowerData, { onConflict: "id" });
 
         if (flowerError) {
-          console.error("Error upserting flower:", flowerError.message);
+          console.error("❌ Error upserting flower:", flowerError.message);
           continue;
         }
 
@@ -767,7 +739,8 @@ async function writeDB(obj) {
               width: img.width || null,
               height: img.height || null,
             };
-            await supabase.from("images").upsert(imgData, { onConflict: "id" });
+            const { error: imgError } = await supabase.from("images").upsert(imgData, { onConflict: "id" });
+            if (imgError) console.error("❌ Error upserting image:", imgError.message);
           }
         }
 
@@ -786,9 +759,8 @@ async function writeDB(obj) {
               time: conv.time,
               growth_delta: conv.growthDelta || null,
             };
-            await supabase
-              .from("conversations")
-              .upsert(convData, { onConflict: "id" });
+            const { error: convError } = await supabase.from("conversations").upsert(convData, { onConflict: "id" });
+            if (convError) console.error("❌ Error upserting conversation:", convError.message);
           }
         }
       }
@@ -796,21 +768,10 @@ async function writeDB(obj) {
 
     console.log("✅ Database saved to Supabase");
   } catch (e) {
-    console.error("Error writing DB:", e.message);
-    // Fall back to local file if Supabase fails
-    try {
-      const dbPath =
-        process.env.NODE_ENV === "production"
-          ? "/app/data/db.json"
-          : path.join(__dirname, "data", "db.json");
-      const dataDir = path.dirname(dbPath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      fs.writeFileSync(dbPath, JSON.stringify(obj, null, 2));
-      console.log("⚠️  Supabase failed, fell back to local file");
-    } catch (e2) {
-      console.error("❌ Both Supabase and local storage failed:", e2.message);
+    console.error("❌ Error writing to Supabase:", e.message);
+    throw e;
+  }
+}
       throw e2;
     }
   }
@@ -3001,55 +2962,79 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /plants/:id/images/:imgId", { id, imgId });
-    const db = await readDB();
-    const plant = db.plants.find((p) => p.id === id);
-    if (!plant) return res.status(404).json({ error: "Plant not found" });
-    const imgIdx = (plant.images || []).findIndex((i) => i.id === imgId);
-    if (imgIdx === -1)
+
+    // Find image from Supabase
+    const { data: imgData, error: selectErr } = await supabase
+      .from("images")
+      .select("*")
+      .eq("id", imgId)
+      .eq("plant_id", id)
+      .single();
+
+    if (selectErr || !imgData) {
       return res.status(404).json({ error: "Image not found" });
-    const img = plant.images[imgIdx];
+    }
+
     console.log("[DELETE] found image", {
-      filename: img.filename,
-      imgId: img.id,
+      filename: imgData.filename,
+      id: imgData.id,
     });
 
     // Delete from Supabase Storage if URL exists
-    if (img.supabaseUrl) {
+    if (imgData.supabase_url) {
       try {
-        // Extract filename from Supabase URL
-        const urlParts = img.supabaseUrl.split("/");
+        const urlParts = imgData.supabase_url.split("/");
         const storageFilename = urlParts[urlParts.length - 1];
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn(
-          "[DELETE] Failed to remove from Supabase Storage:",
-          e.message
-        );
+        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
       }
     }
 
-    // remove file if exists
+    // Delete local file if exists
     try {
-      const full = path.join(UPLOAD_DIR, img.filename);
-      console.log("[DELETE] attempting unlink", full);
+      const full = path.join(UPLOAD_DIR, imgData.filename);
+      console.log("[DELETE] attempting unlink:", full);
       if (fs.existsSync(full)) fs.unlinkSync(full);
-      console.log("[DELETE] file removed", full);
+      console.log("[DELETE] file removed:", full);
     } catch (e) {
-      console.warn("Failed to remove image file", e && e.message);
+      console.warn("Failed to remove local file:", e.message);
     }
-    // remove from array
-    plant.images.splice(imgIdx, 1);
-    // if plant has no images left, remove the plant entirely
-    if (!plant.images || plant.images.length === 0) {
-      const pIdx = db.plants.findIndex((pp) => pp.id === plant.id);
-      if (pIdx !== -1) db.plants.splice(pIdx, 1);
+
+    // Delete image record from Supabase
+    const { error: deleteErr } = await supabase
+      .from("images")
+      .delete()
+      .eq("id", imgId);
+
+    if (deleteErr) {
+      console.error("❌ Failed to delete from Supabase:", deleteErr.message);
+      return res.status(500).json({ error: "Failed to delete image" });
     }
-    // persist
-    await writeDB(db);
+
+    // Check if plant has any images left
+    const { data: remainingImages, error: checkErr } = await supabase
+      .from("images")
+      .select("id")
+      .eq("plant_id", id);
+
+    // If no images left, delete the plant
+    if (!checkErr && (!remainingImages || remainingImages.length === 0)) {
+      const { error: plantDeleteErr } = await supabase
+        .from("plants")
+        .delete()
+        .eq("id", id);
+      if (plantDeleteErr) {
+        console.warn("Failed to delete empty plant:", plantDeleteErr.message);
+      } else {
+        console.log("[DELETE] plant deleted (no images remaining)");
+      }
+    }
+
     return res.json({ success: true, message: "Image deleted successfully" });
   } catch (e) {
-    console.error("Delete image failed:", e);
+    console.error("❌ Delete image failed:", e);
     return res.status(500).json({ error: e.message || String(e) });
   }
 });
@@ -3059,53 +3044,79 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /flowers/:id/images/:imgId", { id, imgId });
-    const db = await readDB();
-    db.flowers = db.flowers || [];
-    const flower = db.flowers.find((p) => p.id === id);
-    if (!flower) return res.status(404).json({ error: "Flower not found" });
-    const imgIdx = (flower.images || []).findIndex((i) => i.id === imgId);
-    if (imgIdx === -1)
+
+    // Find image from Supabase
+    const { data: imgData, error: selectErr } = await supabase
+      .from("images")
+      .select("*")
+      .eq("id", imgId)
+      .eq("flower_id", id)
+      .single();
+
+    if (selectErr || !imgData) {
       return res.status(404).json({ error: "Image not found" });
-    const img = flower.images[imgIdx];
+    }
+
     console.log("[DELETE] found flower image", {
-      filename: img.filename,
-      imgId: img.id,
+      filename: imgData.filename,
+      id: imgData.id,
     });
 
     // Delete from Supabase Storage if URL exists
-    if (img.supabaseUrl) {
+    if (imgData.supabase_url) {
       try {
-        // Extract filename from Supabase URL
-        const urlParts = img.supabaseUrl.split("/");
+        const urlParts = imgData.supabase_url.split("/");
         const storageFilename = urlParts[urlParts.length - 1];
         await supabase.storage.from("images").remove([storageFilename]);
         console.log("[DELETE] removed from Supabase Storage:", storageFilename);
       } catch (e) {
-        console.warn(
-          "[DELETE] Failed to remove from Supabase Storage:",
-          e.message
-        );
+        console.warn("[DELETE] Failed to remove from Supabase Storage:", e.message);
       }
     }
 
     // Delete local file if it exists
     try {
-      const full = path.join(UPLOAD_DIR, img.filename);
-      console.log("[DELETE] attempting unlink", full);
+      const full = path.join(UPLOAD_DIR, imgData.filename);
+      console.log("[DELETE] attempting unlink:", full);
       if (fs.existsSync(full)) fs.unlinkSync(full);
-      console.log("[DELETE] file removed", full);
+      console.log("[DELETE] file removed:", full);
     } catch (e) {
-      console.warn("Failed to remove image file", e && e.message);
+      console.warn("Failed to remove local file:", e.message);
     }
-    flower.images.splice(imgIdx, 1);
-    if (!flower.images || flower.images.length === 0) {
-      const pIdx = db.flowers.findIndex((pp) => pp.id === flower.id);
-      if (pIdx !== -1) db.flowers.splice(pIdx, 1);
+
+    // Delete image record from Supabase
+    const { error: deleteErr } = await supabase
+      .from("images")
+      .delete()
+      .eq("id", imgId);
+
+    if (deleteErr) {
+      console.error("❌ Failed to delete from Supabase:", deleteErr.message);
+      return res.status(500).json({ error: "Failed to delete image" });
     }
-    await writeDB(db);
+
+    // Check if flower has any images left
+    const { data: remainingImages, error: checkErr } = await supabase
+      .from("images")
+      .select("id")
+      .eq("flower_id", id);
+
+    // If no images left, delete the flower
+    if (!checkErr && (!remainingImages || remainingImages.length === 0)) {
+      const { error: flowerDeleteErr } = await supabase
+        .from("flowers")
+        .delete()
+        .eq("id", id);
+      if (flowerDeleteErr) {
+        console.warn("Failed to delete empty flower:", flowerDeleteErr.message);
+      } else {
+        console.log("[DELETE] flower deleted (no images remaining)");
+      }
+    }
+
     return res.json({ success: true, message: "Image deleted successfully" });
   } catch (e) {
-    console.error("Delete flower image failed:", e);
+    console.error("❌ Delete flower image failed:", e);
     return res.status(500).json({ error: e.message || String(e) });
   }
 });
