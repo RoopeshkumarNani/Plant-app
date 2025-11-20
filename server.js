@@ -2028,8 +2028,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     console.log("🔄 Starting background enrichment...");
     enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
   } catch (e) {
-    console.error("❌ /upload endpoint error:", e.message, e.stack);
-    res.status(500).json({ success: false, error: "Internal server error." });
+    console.error("❌ /upload endpoint error:", e && (e.stack || e.message || e));
+    // If DEBUG_SHOW_ERRORS is set, include the stack in the response for debugging
+    const showErrors = process.env.DEBUG_SHOW_ERRORS === "1";
+    const payload = { success: false, error: "Internal server error." };
+    if (showErrors) payload.details = String(e && (e.stack || e.message || e));
+    res.status(500).json(payload);
   }
 });
 
