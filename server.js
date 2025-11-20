@@ -469,11 +469,12 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
 
   // Allow requests from Firebase and localhost
-  if (origin && (
-    origin.includes('my-soulmates') || 
-    origin.includes('localhost') || 
-    origin.includes('127.0.0.1')
-  )) {
+  if (
+    origin &&
+    (origin.includes("my-soulmates") ||
+      origin.includes("localhost") ||
+      origin.includes("127.0.0.1"))
+  ) {
     res.header("Access-Control-Allow-Origin", origin);
   } else if (!origin) {
     res.header("Access-Control-Allow-Origin", "*");
@@ -1930,15 +1931,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         ) {
           const classification = classifyAsFlowerOrPlant(identifiedSpecies);
           determinedType = classification;
-          console.log(`✅ Auto-classified as: ${classification}`);
+          console.log(`✅ Auto-classified as: ${classification} (type: ${typeof classification})`);
         } else {
           console.log(
             `ℹ️  Using user-specified subjectType: ${determinedType}`
           );
         }
-        console.log(
-          `✅ Classified as: ${classification} (type: ${typeof classification})`
-        );
       }
     } catch (e) {
       console.warn(`⚠️  Species identification failed: ${e.message}`);
@@ -2028,6 +2026,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         console.log(
           `   Uploading to Supabase bucket 'images' with filename: ${webpFilename}`
         );
+        console.log(`   Supabase URL: ${process.env.SUPABASE_URL}`);
+        console.log(`   Supabase Key exists: ${!!process.env.SUPABASE_ANON_KEY}`);
+        
         const publicUrl = await uploadFileToSupabaseStorage(
           webpBuffer,
           webpFilename
@@ -2038,8 +2039,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           console.log("✅ Supabase upload successful, URL:", publicUrl);
         } else {
           console.warn(
-            "⚠️  Supabase upload returned null URL - will use firebaseUrl fallback"
+            "⚠️  Supabase upload returned null URL - this is a critical issue!"
           );
+          console.warn("   Using firebaseUrl as fallback, but file won't be accessible!");
           imgEntry.supabaseUrl = null;
         }
       } catch (e) {
@@ -2048,7 +2050,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           e.message,
           e.stack
         );
-        console.warn("   Will use firebaseUrl fallback:", imgEntry.firebaseUrl);
+        console.warn("   Using firebaseUrl fallback:", imgEntry.firebaseUrl);
       }
     } else {
       console.warn(

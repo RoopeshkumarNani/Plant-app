@@ -3395,10 +3395,10 @@
                 // Create abort controller for timeout
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000);  // 10 second timeout (increased from 5)
-                
+
                 const res = await fetch(fullUrl, { ...fetchOptions, signal: controller.signal });
                 clearTimeout(timeoutId);
-                
+
                 if (res.ok) return res;
                 // If 404, don't retry
                 if (res.status === 404) return res;
@@ -4815,13 +4815,13 @@
 
                             // Use explicit subject type if available to pick correct endpoint deterministically
                             const kind = plant._type === 'flower' ? 'flowers' : 'plants';
-                            
+
                             // Build URL with proper API_BASE_URL
-                            const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) 
-                                ? window.API_BASE_URL 
+                            const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL)
+                                ? window.API_BASE_URL
                                 : 'https://plant-app-backend-h28h.onrender.com';
                             const url = baseUrl + `/${kind}/${plant.id}/images/${img.id}`;
-                            
+
                             console.log('🗑️  Deleting image at:', url);
                             const r = await fetch(url, delOpts);
                             const txt = await r.text();
