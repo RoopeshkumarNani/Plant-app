@@ -1,7 +1,7 @@
 /**
  * API Configuration
  * Update this URL with your Replit backend service URL after deployment
- * Cache-buster: 20250120_v3
+ * Cache-buster: 20250121_v5_force_refresh
  */
 
 // Local development
