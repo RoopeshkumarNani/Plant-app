@@ -3089,6 +3089,17 @@
         function getImageUrl(imageOrFilename) {
             if (!imageOrFilename) return '';
 
+            // If it's an object with an ID, use the /image/:id endpoint (always works)
+            if (typeof imageOrFilename === 'object' && imageOrFilename.id) {
+                let baseUrl = (typeof window !== 'undefined' && window.API_BASE_URL)
+                    ? window.API_BASE_URL
+                    : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
+                
+                const url = baseUrl + '/image/' + imageOrFilename.id;
+                console.log('✅ Using /image endpoint:', url);
+                return url;
+            }
+
             // Helper to enforce HTTPS for mixed-content compliance
             function ensureHttps(url) {
                 if (!url) return url;
