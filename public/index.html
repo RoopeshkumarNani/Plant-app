@@ -3614,7 +3614,7 @@
                             try {
                                 const filename = del.getAttribute('data-fn');
                                 const imgId = del.getAttribute('data-img');
-                                const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : 'https://plant-app-backend-h28h.onrender.com';
+                                const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
                                 // Try plants delete first, if 404 then try flowers delete
                                 let url = baseUrl + `/plants/${p.id}/images/${imgId}`;
                                 console.log('DELETE request URL:', url);
@@ -4572,7 +4572,7 @@
                         try {
                             const plantId = del.getAttribute('data-plant');
                             const imgId = del.getAttribute('data-img');
-                            const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : 'https://plant-app-backend-h28h.onrender.com';
+                            const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
                             // try plants delete first, fall back to flowers
                             let url = baseUrl + `/plants/${plantId}/images/${imgId}`;
                             console.log('DELETE request URL:', url);
@@ -4820,7 +4820,7 @@
                             // Build URL with proper API_BASE_URL
                             const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL)
                                 ? window.API_BASE_URL
-                                : 'https://plant-app-backend-h28h.onrender.com';
+                                : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
                             const url = baseUrl + `/${kind}/${plant.id}/images/${img.id}`;
 
                             console.log('🗑️  Deleting image at:', url);
