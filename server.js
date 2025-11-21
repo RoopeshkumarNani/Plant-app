@@ -2553,8 +2553,43 @@ app.delete(
   }
 );
 
+// Initialize sample data if empty (on server startup)
+async function initializeDataIfEmpty() {
+  try {
+    const db = await readDB();
+    if (!db.plants || db.plants.length === 0) {
+      console.log("📊 Database is empty, initializing sample data...");
+      try {
+        // Try to run the initialization script
+        const { spawn } = require('child_process');
+        return new Promise((resolve) => {
+          const child = spawn('node', ['initialize-data.js']);
+          let output = '';
+          child.stdout.on('data', (data) => {
+            output += data;
+            console.log(data.toString().trim());
+          });
+          child.stderr.on('data', (data) => {
+            console.error("Initialization error:", data.toString().trim());
+          });
+          child.on('close', (code) => {
+            console.log(`✅ Initialization completed with code ${code}`);
+            resolve();
+          });
+        });
+      } catch (e) {
+        console.warn("Could not run initialize-data.js:", e.message);
+      }
+    } else {
+      console.log(`📊 Database loaded: ${db.plants.length} plants, ${db.flowers?.length || 0} flowers`);
+    }
+  } catch (e) {
+    console.error("Error checking database:", e.message);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server listening on port ${PORT}`);
   console.log(`   - Local: http://localhost:${PORT}`);
   console.log(
@@ -2563,6 +2598,9 @@ app.listen(PORT, () => {
   console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
   console.log(`   - Using Supabase: ${USE_SUPABASE}`);
   console.log(`   - Build timestamp: ${new Date().toISOString()}`);
+  
+  // Initialize data if empty
+  await initializeDataIfEmpty();
 });
 
 // Reply endpoint: user sends text and server will save it and optionally call LLM to produce plant reply
