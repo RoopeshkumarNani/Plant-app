@@ -621,7 +621,7 @@ console.log("🗄️  Using Supabase for all data storage (fully migrated)");
 
 async function readDB() {
   try {
-    // Always use Supabase now (fully migrated)
+    // Try Supabase first (fully migrated)
     // Fetch from Supabase relational tables in parallel
     const [
       { data: plants, error: plantsError },
@@ -635,56 +635,69 @@ async function readDB() {
       supabase.from("conversations").select("*"),
     ]);
 
-    if (plantsError || flowersError || imagesError || conversationsError) {
-      console.error(
-        "❌ Error reading from Supabase:",
-        plantsError?.message ||
-          flowersError?.message ||
-          imagesError?.message ||
-          conversationsError?.message
-      );
-      return { plants: [], flowers: [] };
+    // Check if we got any data from Supabase
+    if (!plantsError && !flowersError && !imagesError && !conversationsError && 
+        (plants?.length > 0 || flowers?.length > 0)) {
+      // Reconstruct nested structure from relational data
+      const plantsWithData = (plants || []).map((plant) => ({
+        ...plant,
+        images: (images || []).filter((img) => img.plant_id === plant.id),
+        conversations: (conversations || []).filter(
+          (conv) => conv.plant_id === plant.id
+        ),
+        profile: {
+          adoptedDate: plant.adopted_date,
+          userCareStyle: plant.user_care_style,
+          preferredLight: plant.preferred_light,
+          wateringFrequency: plant.watering_frequency,
+          healthStatus: plant.health_status,
+          careScore: plant.care_score,
+        },
+      }));
+
+      const flowersWithData = (flowers || []).map((flower) => ({
+        ...flower,
+        images: (images || []).filter((img) => img.flower_id === flower.id),
+        conversations: (conversations || []).filter(
+          (conv) => conv.flower_id === flower.id
+        ),
+        profile: {
+          adoptedDate: flower.adopted_date,
+          userCareStyle: flower.user_care_style,
+          preferredLight: flower.preferred_light,
+          wateringFrequency: flower.watering_frequency,
+          healthStatus: flower.health_status,
+          careScore: flower.care_score,
+        },
+      }));
+
+      return {
+        plants: plantsWithData,
+        flowers: flowersWithData,
+      };
     }
 
-    // Reconstruct nested structure from relational data
-    const plantsWithData = (plants || []).map((plant) => ({
-      ...plant,
-      images: (images || []).filter((img) => img.plant_id === plant.id),
-      conversations: (conversations || []).filter(
-        (conv) => conv.plant_id === plant.id
-      ),
-      profile: {
-        adoptedDate: plant.adopted_date,
-        userCareStyle: plant.user_care_style,
-        preferredLight: plant.preferred_light,
-        wateringFrequency: plant.watering_frequency,
-        healthStatus: plant.health_status,
-        careScore: plant.care_score,
-      },
-    }));
+    // Fallback to local db.json if Supabase is empty or has errors
+    console.log("📁 Supabase empty or errored, falling back to local db.json");
+    const dbPath = path.join(__dirname, "data", "db.json");
+    if (fs.existsSync(dbPath)) {
+      const localData = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+      return localData || { plants: [], flowers: [] };
+    }
 
-    const flowersWithData = (flowers || []).map((flower) => ({
-      ...flower,
-      images: (images || []).filter((img) => img.flower_id === flower.id),
-      conversations: (conversations || []).filter(
-        (conv) => conv.flower_id === flower.id
-      ),
-      profile: {
-        adoptedDate: flower.adopted_date,
-        userCareStyle: flower.user_care_style,
-        preferredLight: flower.preferred_light,
-        wateringFrequency: flower.watering_frequency,
-        healthStatus: flower.health_status,
-        careScore: flower.care_score,
-      },
-    }));
-
-    return {
-      plants: plantsWithData,
-      flowers: flowersWithData,
-    };
+    return { plants: [], flowers: [] };
   } catch (e) {
-    console.error("❌ Error reading from Supabase:", e.message);
+    console.error("❌ Error reading database:", e.message);
+    // Fallback to local db.json on exception
+    try {
+      const dbPath = path.join(__dirname, "data", "db.json");
+      if (fs.existsSync(dbPath)) {
+        const localData = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+        return localData || { plants: [], flowers: [] };
+      }
+    } catch (fileErr) {
+      console.error("❌ Could not read local db.json either:", fileErr.message);
+    }
     return { plants: [], flowers: [] };
   }
 }
@@ -1928,7 +1941,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
       // ✅ NO LONGER SAVE TO LOCAL FILESYSTEM (ephemeral on Replit)
       // Files will only be stored in Supabase Storage
-      console.log("ℹ️  Skipping local file save - will use Supabase Storage only");
+      console.log(
+        "ℹ️  Skipping local file save - will use Supabase Storage only"
+      );
     } catch (e) {
       console.warn("⚠️  Could not read or compress file:", e.message);
     }
@@ -1976,7 +1991,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         ) {
           const classification = classifyAsFlowerOrPlant(identifiedSpecies);
           determinedType = classification;
-          console.log(`✅ Auto-classified as: ${classification} (type: ${typeof classification})`);
+          console.log(
+            `✅ Auto-classified as: ${classification} (type: ${typeof classification})`
+          );
         } else {
           console.log(
             `ℹ️  Using user-specified subjectType: ${determinedType}`
@@ -2080,7 +2097,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           console.warn(
             "⚠️  Firebase upload failed, trying Supabase Storage..."
           );
-          storageUrl = await uploadFileToSupabaseStorage(webpBuffer, webpFilename);
+          storageUrl = await uploadFileToSupabaseStorage(
+            webpBuffer,
+            webpFilename
+          );
           if (storageUrl) {
             imgEntry.supabase_url = storageUrl;
             console.log("✅ Image uploaded to Supabase Storage:", storageUrl);
@@ -2097,10 +2117,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           }
         }
       } catch (e) {
-        console.error(
-          "❌ Image upload attempt failed:",
-          e.message
-        );
+        console.error("❌ Image upload attempt failed:", e.message);
 
         // Delete from database and return error
         const idx = plant.images.indexOf(imgEntry);
