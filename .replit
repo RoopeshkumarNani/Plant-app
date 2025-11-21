@@ -1,0 +1,5 @@
+run = "node initialize-data.js && node server.js"
+language = "nodejs"
+
+[deployment]
+run = ["node", "initialize-data.js", "&&", "node", "server.js"]
