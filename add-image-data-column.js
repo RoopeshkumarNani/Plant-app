@@ -28,10 +28,7 @@ async function addImageDataColumn() {
     console.log("✅ Column added successfully!");
 
     // Verify the table structure
-    const { data: rows } = await supabase
-      .from("images")
-      .select("*")
-      .limit(1);
+    const { data: rows } = await supabase.from("images").select("*").limit(1);
 
     if (rows && rows.length > 0) {
       console.log("✅ Sample record keys:", Object.keys(rows[0]));
