@@ -2790,6 +2790,9 @@
                 if (photoPreview) { photoPreview.src = ''; photoPreview.style.display = 'none'; }
                 if (filePlaceholder) filePlaceholder.style.display = 'block';
                 if (nicknameInput) nicknameInput.value = '';
+                // Clear subject ID and type when resetting form (for new uploads, not adding to existing)
+                uploadSubjectId = null;
+                uploadSubjectType = null;
             } catch (e) { console.warn('resetUploadForm error', e); }
         }
 
@@ -3369,9 +3372,16 @@
             }
         } catch (e) { console.warn('SSE not supported', e); }
 
-        function openUploadForPlant(plantId) {
+        // Store subject ID when adding photo to existing plant/flower
+        let uploadSubjectId = null;
+        let uploadSubjectType = null;
+
+        function openUploadForPlant(plantId, plantType) {
             const panel = document.getElementById('uploadPanel');
             resetUploadForm();
+            uploadSubjectId = plantId;
+            uploadSubjectType = plantType;
+            console.log('🔧 openUploadForPlant:', plantId, 'type:', plantType);
             if (panel) { panel.classList.remove('collapsed'); panel.classList.add('expanded'); }
             // Do not auto-open the file picker here. Let the user click 'Choose photo' to avoid
             // triggering the picker twice (this was causing double prompts).
@@ -4122,9 +4132,11 @@
                 fd.append('photo', toSend);
                 fd.append('nickname', nickname);
                 if (owner) fd.append('owner', owner);
-                // Send subjectType based on which tab is active (plants or flowers)
-                console.log('📤 Uploading - activeTab:', activeTab, 'type:', typeof activeTab);
-                fd.append('subjectType', activeTab);
+                if (uploadSubjectId) fd.append('subjectId', uploadSubjectId);
+                // Send subjectType: use uploadSubjectType if adding to existing item, otherwise use active tab
+                const effectiveSubjectType = uploadSubjectType || activeTab;
+                console.log('📤 Uploading - activeTab:', activeTab, 'uploadSubjectType:', uploadSubjectType, 'effectiveSubjectType:', effectiveSubjectType);
+                fd.append('subjectType', effectiveSubjectType);
                 // prepare headers
                 const authH = getAuthHeaders();
                 // show progress UI
@@ -4860,7 +4872,7 @@
                 });
             }
 
-            addBtn.onclick = (ev) => { ev.stopPropagation(); closeManageModal(); openUploadForPlant(plant.id); };
+            addBtn.onclick = (ev) => { ev.stopPropagation(); closeManageModal(); openUploadForPlant(plant.id, plant._type); };
             document.getElementById('modalCloseBtn').onclick = closeManageModal;
             bd.style.display = 'flex';
         }
