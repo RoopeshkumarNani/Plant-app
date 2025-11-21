@@ -524,6 +524,51 @@ app.use(
 
 app.use(express.json());
 
+// ============================================================================
+// IMAGE SERVING ENDPOINT - serves images from database or Firebase
+// ============================================================================
+app.get("/image/:imageId", async (req, res) => {
+  try {
+    const { imageId } = req.params;
+    console.log(`📸 Serving image: ${imageId}`);
+
+    // Try to get image from Supabase
+    const { data: images, error } = await supabase
+      .from("images")
+      .select("*")
+      .eq("id", imageId)
+      .single();
+
+    if (error || !images) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+
+    // If image has firebase_url, redirect to it
+    if (images.firebase_url) {
+      console.log(`   Redirecting to Firebase URL`);
+      return res.redirect(images.firebase_url);
+    }
+
+    // If image has supabase_url, redirect to it
+    if (images.supabase_url) {
+      console.log(`   Redirecting to Supabase URL`);
+      return res.redirect(images.supabase_url);
+    }
+
+    // Check if file exists locally
+    const localPath = path.join(UPLOAD_DIR, images.filename);
+    if (fs.existsSync(localPath)) {
+      console.log(`   Serving from local: ${localPath}`);
+      return res.sendFile(localPath);
+    }
+
+    res.status(404).json({ error: "Image file not found in any storage" });
+  } catch (error) {
+    console.error("❌ Error serving image:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Enhanced system prompt: encourage varied, natural responses with personality
 // NOTE: do NOT invent nicknames; only use the recorded nickname if present. Avoid repetitive opening lines like "Hi there".
 const SYSTEM_PROMPTS = {
@@ -2012,7 +2057,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     if (fileBuffer) {
       try {
-        console.log("📤 Uploading to Supabase Storage (REQUIRED)...");
+        console.log("📤 Attempting to upload image to persistent storage...");
         const webpFilename = imgEntry.id + "-image.webp";
         console.log(
           `   Converting JPEG (${fileBuffer.length} bytes) to WebP...`
@@ -2021,48 +2066,59 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
           .webp({ quality: 80 })
           .toBuffer();
         console.log(`   WebP size: ${webpBuffer.length} bytes`);
-        console.log(
-          `   Uploading to Supabase bucket 'images' with filename: ${webpFilename}`
-        );
-        console.log(`   Supabase URL: ${process.env.SUPABASE_URL}`);
-        console.log(`   Supabase Key exists: ${!!process.env.SUPABASE_ANON_KEY}`);
-        
-        const publicUrl = await uploadFileToSupabaseStorage(
+
+        // Try Firebase Storage (persistent, reliable)
+        let storageUrl = await uploadFileToFirebaseStorage(
           webpBuffer,
-          webpFilename
+          `uploads/${webpFilename}`
         );
-        
-        if (publicUrl) {
-          imgEntry.supabase_url = publicUrl;
-          imgEntry.storage_path = webpFilename;
-          console.log("✅ Supabase upload successful!", publicUrl);
+
+        if (storageUrl) {
+          imgEntry.firebase_url = storageUrl;
+          console.log("✅ Image uploaded to Firebase Storage:", storageUrl);
         } else {
-          throw new Error("Supabase upload failed - returned null URL");
+          console.warn(
+            "⚠️  Firebase upload failed, trying Supabase Storage..."
+          );
+          storageUrl = await uploadFileToSupabaseStorage(webpBuffer, webpFilename);
+          if (storageUrl) {
+            imgEntry.supabase_url = storageUrl;
+            console.log("✅ Image uploaded to Supabase Storage:", storageUrl);
+          } else {
+            // Fallback: save filename, will serve via /image/:imageId endpoint
+            console.warn(
+              "⚠️  Cloud storage failed, will serve via image endpoint"
+            );
+            // Save the WebP to local storage as fallback
+            const tempPath = path.join(UPLOAD_DIR, webpFilename);
+            fs.writeFileSync(tempPath, webpBuffer);
+            imgEntry.firebase_url = `/image/${imgEntry.id}`;
+            console.log("   Will serve via:", imgEntry.firebase_url);
+          }
         }
       } catch (e) {
         console.error(
-          "❌ CRITICAL: Supabase upload failed! Image cannot be saved!",
+          "❌ Image upload attempt failed:",
           e.message
         );
-        console.error(e.stack);
-        
+
         // Delete from database and return error
         const idx = plant.images.indexOf(imgEntry);
         if (idx > -1) plant.images.splice(idx, 1);
-        
+
         return res.status(500).json({
           success: false,
-          error: "Image upload to Supabase failed - file cannot be saved",
+          error: "Image upload failed - could not save file",
           details: e.message,
         });
       }
     } else {
       console.error("❌ CRITICAL: fileBuffer is null - cannot process image!");
-      
+
       // Delete from database and return error
       const idx = plant.images.indexOf(imgEntry);
       if (idx > -1) plant.images.splice(idx, 1);
-      
+
       return res.status(400).json({
         success: false,
         error: "Failed to process image file",
