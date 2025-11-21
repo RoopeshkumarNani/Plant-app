@@ -4123,6 +4123,7 @@
                 fd.append('nickname', nickname);
                 if (owner) fd.append('owner', owner);
                 // Send subjectType based on which tab is active (plants or flowers)
+                console.log('📤 Uploading - activeTab:', activeTab, 'type:', typeof activeTab);
                 fd.append('subjectType', activeTab);
                 // prepare headers
                 const authH = getAuthHeaders();

@@ -1949,6 +1949,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     }
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
+    console.log("🔍 UPLOAD DEBUG - Received subjectType:", subjectType, "Type:", typeof subjectType);
     const db = await readDB();
     if (!db || typeof db !== "object") {
       console.error("❌ readDB returned invalid object:", typeof db, db);
@@ -1971,7 +1972,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       subjectType === "flower" || subjectType === "flowers"
         ? "flowers"
         : "plants";
-    console.log("🏷️  Initial determinedType from user input:", determinedType);
+    console.log("🏷️  Initial determinedType from user input:", determinedType, "(subjectType was:", subjectType, ")");
 
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
