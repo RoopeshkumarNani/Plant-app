@@ -3826,9 +3826,11 @@ app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
     ];
 
     for (const img of allImages) {
-      // If URL is missing but we have a filename
-      if ((!img.supabase_url && !img.firebase_url) && img.filename) {
-        console.log(`Checking image: ${img.filename}`);
+      // Fix if URL is missing OR if it points to the old Replit backend
+      const hasBadUrl = img.firebase_url && img.firebase_url.includes("replit.dev");
+      
+      if ((!img.supabase_url && (!img.firebase_url || hasBadUrl)) && img.filename) {
+        console.log(`Checking image: ${img.filename} (Bad URL: ${hasBadUrl})`);
         
         // Generate Supabase Storage URL
         const { data } = supabase.storage.from("images").getPublicUrl(img.filename);
