@@ -385,9 +385,11 @@ async function syncDBToFirebase(dbData) {
 }
 
 // Define directories BEFORE error handlers that use them
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+// Define directories BEFORE error handlers that use them
+const isVercel = process.env.VERCEL === '1';
+const UPLOAD_DIR = isVercel ? path.join('/tmp', 'uploads') : path.join(__dirname, "uploads");
 // Always use relative path from __dirname for consistency across environments
-const DATA_DIR = path.join(__dirname, "data");
+const DATA_DIR = isVercel ? path.join('/tmp', 'data') : path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
 // Image format conversion utility - converts any format to PNG for processing
