@@ -609,11 +609,22 @@ function writeReplyDebug(line) {
   }
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
+// Vercel/Serverless compatible storage (Memory)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
+
+// Helper to write buffer to temp file for libraries that need it
+async function withTempFile(buffer, callback) {
+  const tempPath = path.join('/tmp', `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`);
+  try {
+    fs.writeFileSync(tempPath, buffer);
+    return await callback(tempPath);
+  } finally {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch (e) { }
+    }
+  }
+}
 
 // Database functions - ALWAYS use Supabase relational schema (fully migrated)
 const USE_SUPABASE = true;
@@ -1327,8 +1338,7 @@ async function callPlantNet(imagePath) {
     // Try Pl@ntNet API with your API key
     try {
       console.log("📤 Calling Pl@ntNet API for plant identification...");
-      const buf = fs.readFileSync(processPath);
-
+      
       // Create proper FormData for multipart/form-data
       const form = new FormData();
       form.append("images", fs.createReadStream(processPath));
@@ -1928,24 +1938,19 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         success: false,
         error: 'No file uploaded (field name must be "photo")',
       });
-    console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
+    console.log("✅ File received:", file.originalname, `(${file.size} bytes)`);
 
-    let fileBuffer = null;
+    let fileBuffer = file.buffer;
+    
     try {
-      fileBuffer = fs.readFileSync(file.path);
-      console.log("✅ File read into memory buffer, size:", fileBuffer.length);
+      console.log("✅ File in memory buffer, size:", fileBuffer.length);
       fileBuffer = await sharp(fileBuffer)
         .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality: 85, progressive: true })
         .toBuffer();
       console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
-      // ✅ NO LONGER SAVE TO LOCAL FILESYSTEM (ephemeral on Replit)
-      // Files will only be stored in Supabase Storage
-      console.log(
-        "ℹ️  Skipping local file save - will use Supabase Storage only"
-      );
     } catch (e) {
-      console.warn("⚠️  Could not read or compress file:", e.message);
+      console.warn("⚠️  Could not compress file:", e.message);
     }
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
@@ -1977,7 +1982,10 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
     try {
-      const identification = await callPlantNet(file.path);
+      let identification = null;
+      await withTempFile(fileBuffer, async (tempPath) => {
+          identification = await callPlantNet(tempPath);
+      });
       if (identification && identification.species) {
         identifiedSpecies = identification.species;
         console.log(`✅ Identified species: ${identifiedSpecies}`);
@@ -2053,7 +2061,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     const imgEntry = {
       id: uuidv4(),
-      filename: path.basename(file.path),
+      filename: `${Date.now()}-${file.originalname}`,
       uploadedAt: new Date().toISOString(),
       area: null,
       firebase_url: null, // ❌ Will no longer use local files
@@ -2159,7 +2167,8 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     // Run enrichment in the background (analyzes green area, generates better response, etc)
     console.log("🔄 Starting background enrichment...");
-    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
+    // Pass buffer instead of path for enrichment
+    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, fileBuffer);
   } catch (e) {
     console.error(
       "❌ /upload endpoint error:",
@@ -2194,7 +2203,7 @@ async function enrichImageAndRespond(
   imgEntry,
   msgEntry,
   subjectCollection,
-  localFilePath
+  imageBuffer
 ) {
   try {
     console.log(
@@ -2207,10 +2216,8 @@ async function enrichImageAndRespond(
       return;
     }
 
-    if (!fs.existsSync(localFilePath)) {
-      console.error(`[ENRICH] Local file ${localFilePath} does not exist`);
-      return;
-    }
+    // Use temp file for operations that need it
+    await withTempFile(imageBuffer, async (localFilePath) => {
 
     // 1. Analyze green area
     const area = await analyzeGreenArea(localFilePath);
@@ -2306,23 +2313,9 @@ async function enrichImageAndRespond(
       conversation: msgEntry,
     });
     console.log(`[ENRICH] SSE notification sent for ${subject.id}`);
+    });
   } catch (e) {
     console.error(`[ENRICH] Background enrichment failed: ${e.message}`);
-  } finally {
-    // 8. Clean up the local file
-    setTimeout(() => {
-      try {
-        if (fs.existsSync(localFilePath)) {
-          fs.unlinkSync(localFilePath);
-          console.log(
-            "[ENRICH] Cleaned up local upload:",
-            path.basename(localFilePath)
-          );
-        }
-      } catch (e) {
-        console.warn("[ENRICH] Could not delete temp file:", e.message);
-      }
-    }, 30 * 1000); // 30-second delay
   }
 }
 
