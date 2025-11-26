@@ -3811,6 +3811,54 @@ app.get("/analytics/plants", (req, res) => {
   }
 });
 
+// Admin endpoint: fix missing image URLs by checking Supabase Storage
+app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
+  try {
+    console.log("🔧 Starting image URL fix...");
+    const db = await readDB();
+    const plants = db.plants || [];
+    const flowers = db.flowers || [];
+    let fixed = 0;
+
+    const allImages = [
+      ...plants.flatMap(p => (p.images || []).map(i => ({ ...i, parentId: p.id, type: 'plant' }))),
+      ...flowers.flatMap(f => (f.images || []).map(i => ({ ...i, parentId: f.id, type: 'flower' })))
+    ];
+
+    for (const img of allImages) {
+      // If URL is missing but we have a filename
+      if ((!img.supabase_url && !img.firebase_url) && img.filename) {
+        console.log(`Checking image: ${img.filename}`);
+        
+        // Generate Supabase Storage URL
+        const { data } = supabase.storage.from("images").getPublicUrl(img.filename);
+        if (data && data.publicUrl) {
+           // Update the original object in the DB structure
+           let parent = (img.type === 'plant' ? plants : flowers).find(p => p.id === img.parentId);
+           if (parent) {
+             const originalImg = parent.images.find(i => i.id === img.id);
+             if (originalImg) {
+               originalImg.supabase_url = data.publicUrl;
+               fixed++;
+               console.log(`✅ Fixed URL for ${img.filename}`);
+             }
+           }
+        }
+      }
+    }
+
+    if (fixed > 0) {
+      await writeDB(db);
+      console.log(`💾 Saved DB with ${fixed} fixed images`);
+    }
+
+    res.json({ success: true, fixed, message: `Fixed ${fixed} images` });
+  } catch (e) {
+    console.error("Fix failed:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Admin endpoint: re-analyze all images with null area (fixes old uploads)
 app.post(
   "/admin/reanalyze-images",
