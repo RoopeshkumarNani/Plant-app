@@ -59,7 +59,14 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
 }
 
 // Reference to Firebase Realtime Database
-const db = admin.database();
+let db = null;
+if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+  try {
+    db = admin.database();
+  } catch (e) {
+    console.warn("⚠️  Could not initialize Firebase Database:", e.message);
+  }
+}
 
 // Reference to Firebase Storage Bucket
 let bucket = null;
