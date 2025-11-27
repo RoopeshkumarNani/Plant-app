@@ -3861,6 +3861,95 @@ app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
   }
 });
 
+// Admin endpoint: Migrate images from Replit to Supabase
+app.post("/admin/migrate-from-replit", requireToken, async (req, res) => {
+  try {
+    console.log("🚀 Starting Replit -> Supabase migration...");
+    const db = await readDB();
+    const plants = db.plants || [];
+    const flowers = db.flowers || [];
+    let migrated = 0;
+    let errors = 0;
+
+    const allImages = [
+      ...plants.flatMap(p => (p.images || []).map(i => ({ ...i, parentId: p.id, type: 'plant' }))),
+      ...flowers.flatMap(f => (f.images || []).map(i => ({ ...i, parentId: f.id, type: 'flower' })))
+    ];
+
+    for (const img of allImages) {
+      // Check if it's a Replit URL
+      if (img.firebase_url && img.firebase_url.includes("replit.dev")) {
+        console.log(`Processing ${img.filename}...`);
+        
+        // 1. Fetch from Replit
+        try {
+          const replitResp = await fetch(img.firebase_url);
+          if (!replitResp.ok) {
+            console.warn(`❌ Failed to fetch from Replit (${replitResp.status}): ${img.firebase_url}`);
+            errors++;
+            continue;
+          }
+          
+          const buffer = await replitResp.buffer();
+          const contentType = replitResp.headers.get("content-type") || "image/jpeg";
+
+          // 2. Upload to Supabase
+          const { data, error } = await supabase.storage
+            .from("images")
+            .upload(img.filename, buffer, {
+              contentType: contentType,
+              upsert: true,
+            });
+
+          if (error) {
+             console.error(`❌ Supabase upload failed: ${error.message}`);
+             errors++;
+             continue;
+          }
+
+          // 3. Get Public URL
+          const { data: publicData } = supabase.storage.from("images").getPublicUrl(img.filename);
+          
+          if (publicData && publicData.publicUrl) {
+             // 4. Update DB
+             let parent = (img.type === 'plant' ? plants : flowers).find(p => p.id === img.parentId);
+             if (parent) {
+               const originalImg = parent.images.find(i => i.id === img.id);
+               if (originalImg) {
+                 originalImg.supabase_url = publicData.publicUrl;
+                 // Optional: Clear the old broken URL so we stop trying to use it
+                 // originalImg.firebase_url = null; 
+                 migrated++;
+                 console.log(`✅ Migrated ${img.filename} to Supabase!`);
+               }
+             }
+          }
+
+        } catch (err) {
+          console.error(`❌ Error processing ${img.filename}:`, err.message);
+          errors++;
+        }
+      }
+    }
+
+    if (migrated > 0) {
+      await writeDB(db);
+      console.log(`💾 Saved DB with ${migrated} migrated images`);
+    }
+
+    res.json({ 
+      success: true, 
+      migrated, 
+      errors, 
+      message: `Migrated ${migrated} images. Errors: ${errors}.` 
+    });
+
+  } catch (e) {
+    console.error("Migration failed:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Admin endpoint: re-analyze all images with null area (fixes old uploads)
 app.post(
   "/admin/reanalyze-images",
