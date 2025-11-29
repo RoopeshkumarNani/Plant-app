@@ -709,11 +709,14 @@ function writeReplyDebug(line) {
   }
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-const upload = multer({ storage });
+// Use memory storage on Vercel, disk storage locally
+const storage = process.env.VERCEL
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+    });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
 // Database functions - ALWAYS use Supabase relational schema (fully migrated)
 const USE_SUPABASE = true;
@@ -1412,31 +1415,57 @@ function classifyAsFlowerOrPlant(speciesName) {
   return "plants";
 }
 
-async function callPlantNet(imagePath) {
+async function callPlantNet(imagePathOrBuffer) {
   try {
     console.log(
       "🔍 Plant identification: Attempting real API identification..."
     );
 
-    let processPath = imagePath;
+    let imagePath = imagePathOrBuffer;
+    let fileBuffer = null;
 
-    // Try to convert unsupported formats to PNG
-    const ext = path.extname(imagePath).toLowerCase();
-    if (![".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"].includes(ext)) {
-      const convertedPath = await ensureJimpCompatibleImage(imagePath);
-      if (convertedPath) {
-        processPath = convertedPath;
+    // If it's a buffer, we can't use file operations; skip direct processing
+    if (Buffer.isBuffer(imagePathOrBuffer)) {
+      console.log("📝 Using buffer data for plant identification (no local file)");
+      fileBuffer = imagePathOrBuffer;
+    } else if (typeof imagePathOrBuffer === 'string') {
+      imagePath = imagePathOrBuffer;
+      console.log("📝 Using file path for plant identification");
+    } else {
+      console.warn("⚠️  Invalid parameter to callPlantNet");
+      return null;
+    }
+
+    // Try to convert unsupported formats to PNG (only if we have a file path)
+    let processPath = imagePath;
+    if (typeof imagePath === 'string') {
+      const ext = path.extname(imagePath).toLowerCase();
+      if (![".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"].includes(ext)) {
+        const convertedPath = await ensureJimpCompatibleImage(imagePath);
+        if (convertedPath) {
+          processPath = convertedPath;
+        }
       }
     }
 
     // Try Pl@ntNet API with your API key
     try {
       console.log("📤 Calling Pl@ntNet API for plant identification...");
-      const buf = fs.readFileSync(processPath);
-
-      // Create proper FormData for multipart/form-data
+      
       const form = new FormData();
-      form.append("images", fs.createReadStream(processPath));
+      
+      // Append file data - either from buffer or from disk
+      if (fileBuffer) {
+        console.log("Using buffer for API call, size:", fileBuffer.length);
+        form.append("images", fileBuffer, "image.jpg");
+      } else if (typeof processPath === 'string' && fs.existsSync(processPath)) {
+        console.log("Using file path for API call:", processPath);
+        form.append("images", fs.createReadStream(processPath));
+      } else {
+        console.warn("⚠️  No valid image data for PlantNet API");
+        return null;
+      }
+      
       form.append("organs", "auto");
 
       // Using Pl@ntNet API with your API key from .env
@@ -2033,12 +2062,21 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         success: false,
         error: 'No file uploaded (field name must be "photo")',
       });
-    console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
+    console.log("✅ File received:", file.filename || file.originalname, `(${file.size} bytes)`);
 
     let fileBuffer = null;
     try {
-      fileBuffer = fs.readFileSync(file.path);
-      console.log("✅ File read into memory buffer, size:", fileBuffer.length);
+      // Handle both disk storage (file.path) and memory storage (file.buffer)
+      if (file.buffer) {
+        fileBuffer = file.buffer;
+        console.log("✅ Using memory storage buffer, size:", fileBuffer.length);
+      } else if (file.path) {
+        fileBuffer = fs.readFileSync(file.path);
+        console.log("✅ File read from disk, size:", fileBuffer.length);
+      } else {
+        throw new Error("No file buffer or path available");
+      }
+      
       fileBuffer = await sharp(fileBuffer)
         .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality: 85, progressive: true })
@@ -2093,7 +2131,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
     try {
-      const identification = await callPlantNet(file.path);
+      // Use fileBuffer or file.path depending on what's available
+      const identificationInput = fileBuffer || file.path;
+      const identification = await callPlantNet(identificationInput);
       if (identification && identification.species) {
         identifiedSpecies = identification.species;
         console.log(`✅ Identified species: ${identifiedSpecies}`);
@@ -2169,7 +2209,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     const imgEntry = {
       id: uuidv4(),
-      filename: path.basename(file.path),
+      filename: file.originalname || file.filename || `image-${Date.now()}.jpg`,
       uploadedAt: new Date().toISOString(),
       area: null,
       firebase_url: null, // ❌ Will no longer use local files
@@ -2288,7 +2328,9 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     // Run enrichment in the background (analyzes green area, generates better response, etc)
     console.log("🔄 Starting background enrichment...");
-    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
+    // Pass buffer or file path depending on storage method
+    const enrichmentInput = fileBuffer || file.path;
+    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, enrichmentInput);
   } catch (e) {
     console.error(
       "❌ /upload endpoint error:",
