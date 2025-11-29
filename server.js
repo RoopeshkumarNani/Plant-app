@@ -496,23 +496,28 @@ process.on("unhandledRejection", (reason, p) => {
 });
 
 // Try to create directories, but don't fail on Vercel's ephemeral filesystem
-try {
-  if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-} catch (e) {
-  console.warn("⚠️  Cannot create UPLOAD_DIR (ephemeral filesystem):", e.message);
-}
+// Skip on Vercel since it has ephemeral filesystem
+if (!process.env.VERCEL) {
+  try {
+    if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  } catch (e) {
+    console.warn("⚠️  Cannot create UPLOAD_DIR:", e.message);
+  }
 
-try {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-} catch (e) {
-  console.warn("⚠️  Cannot create DATA_DIR (ephemeral filesystem):", e.message);
-}
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (e) {
+    console.warn("⚠️  Cannot create DATA_DIR:", e.message);
+  }
 
-try {
-  if (!fs.existsSync(DB_FILE))
-    fs.writeFileSync(DB_FILE, JSON.stringify({ plants: [] }, null, 2));
-} catch (e) {
-  console.warn("⚠️  Cannot write DB_FILE (ephemeral filesystem):", e.message);
+  try {
+    if (!fs.existsSync(DB_FILE))
+      fs.writeFileSync(DB_FILE, JSON.stringify({ plants: [] }, null, 2));
+  } catch (e) {
+    console.warn("⚠️  Cannot write DB_FILE:", e.message);
+  }
+} else {
+  console.log("ℹ️  Running on Vercel - skipping filesystem operations");
 }
 
 // Enable CORS for cross-origin requests (Firebase to Render)
