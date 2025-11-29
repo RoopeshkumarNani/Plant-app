@@ -1,7 +1,9 @@
 # Vercel Deployment Troubleshooting Guide
 
 ## Current Status
+
 ✅ Code pushed to GitHub with fixes for:
+
 - Firebase initialization errors
 - Serverless function export
 - Proper private key parsing
@@ -13,17 +15,19 @@ https://vercel.com/dashboard/plant-app-sigma/deployments
 ## If You Still See 500 Error
 
 ### Step 1: Check Vercel Logs
+
 1. Go to: https://vercel.com/dashboard
 2. Select project: **plant-app-sigma**
 3. Click **Deployments** tab
 4. Click the latest deployment (top one)
-5. Click **Functions** 
+5. Click **Functions**
 6. Click **server.js**
 7. Scroll to see all logs
 
 ### Step 2: Look for These Messages
 
 ✅ **GOOD** - You'll see these:
+
 ```
 🔧 Initializing Firebase Admin SDK...
   - Project ID: my-soulmates
@@ -37,6 +41,7 @@ https://vercel.com/dashboard/plant-app-sigma/deployments
 ```
 
 ❌ **BAD** - If you see these, there's a problem:
+
 ```
 ❌ Firebase initialization failed: [error message]
 ```
@@ -50,9 +55,11 @@ https://vercel.com/dashboard/plant-app-sigma/deployments
 #### How to Fix It:
 
 1. **Get the correct private key format:**
+
    - Open your Firebase JSON file: `~/Downloads/my-soulmates-firebase-adminsdk-fbsvc-*.json`
    - Find the `private_key` value
    - It should look like:
+
    ```
    -----BEGIN PRIVATE KEY-----
    [many lines of base64]
@@ -60,6 +67,7 @@ https://vercel.com/dashboard/plant-app-sigma/deployments
    ```
 
 2. **In Vercel Dashboard:**
+
    - Go to Settings → Environment Variables
    - Find `FIREBASE_PRIVATE_KEY`
    - **DELETE** the existing value
@@ -98,6 +106,7 @@ cat ~/Downloads/my-soulmates-firebase-adminsdk-fbsvc-*.json | grep -E "project_i
 ```
 
 Should show:
+
 - `"project_id": "my-soulmates"`
 - `"client_email": "firebase-adminsdk-fbsvc@my-soulmates.iam.gserviceaccount.com"`
 - `"private_key_id": "c34fa7f23e226c9815b706fb6756aaf3df14304a"`
@@ -105,6 +114,7 @@ Should show:
 ### Test Firebase Locally
 
 Add this to `.env` file locally and test:
+
 ```
 FIREBASE_PROJECT_ID=my-soulmates
 FIREBASE_PRIVATE_KEY_ID=c34fa7f23e226c9815b706fb6756aaf3df14304a
@@ -114,6 +124,7 @@ FIREBASE_PRIVATE_KEY=[paste the full private key - copy from JSON file]
 ```
 
 Then run locally:
+
 ```bash
 npm start
 ```
@@ -123,6 +134,7 @@ If it works locally but not on Vercel, the issue is with how the private key was
 ## Success Criteria
 
 Once working, you should see:
+
 1. ✅ No 500 errors
 2. ✅ Upload an image → get success message with Firebase URL
 3. ✅ Image displays in gallery
@@ -132,5 +144,6 @@ Once working, you should see:
 ## Contact Firebase Support
 
 If you're still having issues, check:
+
 - https://firebase.google.com/docs/admin/setup
 - Make sure the service account has Storage permissions in Firebase Console

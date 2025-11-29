@@ -27,12 +27,12 @@ console.log("✅ Supabase client initialized");
 // Helper function to properly parse the private key regardless of format
 function parsePrivateKey(keyStr) {
   if (!keyStr) return undefined;
-  
+
   // If it contains literal \n (two characters), replace with actual newlines
   if (keyStr.includes("\\n")) {
     return keyStr.replace(/\\n/g, "\n");
   }
-  
+
   // Otherwise assume it already has real newlines (from environment variable)
   return keyStr;
 }
@@ -58,7 +58,7 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
       console.log("  - Project ID:", process.env.FIREBASE_PROJECT_ID);
       console.log("  - Client Email:", process.env.FIREBASE_CLIENT_EMAIL);
       console.log("  - Private Key ID:", process.env.FIREBASE_PRIVATE_KEY_ID);
-      
+
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         databaseURL: `https://${
@@ -495,10 +495,25 @@ process.on("unhandledRejection", (reason, p) => {
   }
 });
 
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(DB_FILE))
-  fs.writeFileSync(DB_FILE, JSON.stringify({ plants: [] }, null, 2));
+// Try to create directories, but don't fail on Vercel's ephemeral filesystem
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+} catch (e) {
+  console.warn("⚠️  Cannot create UPLOAD_DIR (ephemeral filesystem):", e.message);
+}
+
+try {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+} catch (e) {
+  console.warn("⚠️  Cannot create DATA_DIR (ephemeral filesystem):", e.message);
+}
+
+try {
+  if (!fs.existsSync(DB_FILE))
+    fs.writeFileSync(DB_FILE, JSON.stringify({ plants: [] }, null, 2));
+} catch (e) {
+  console.warn("⚠️  Cannot write DB_FILE (ephemeral filesystem):", e.message);
+}
 
 // Enable CORS for cross-origin requests (Firebase to Render)
 // MUST be before static routes so it applies to /uploads
