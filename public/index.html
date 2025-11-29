@@ -19,7 +19,7 @@
         // Fallback API_BASE_URL if config.js didn't load
         if (typeof API_BASE_URL === 'undefined') {
             const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev";
+            window.API_BASE_URL = isLocalhost ? "http://localhost:3000" : "https://plant-app-sigma.vercel.app";
             console.log("⚠️ Config.js not loaded, using fallback API_BASE_URL:", window.API_BASE_URL);
         }
     </script>
@@ -4841,16 +4841,21 @@
                             // Use explicit subject type if available to pick correct endpoint deterministically
                             const kind = plant._type === 'flower' ? 'flowers' : 'plants';
 
-                            // Build URL with proper API_BASE_URL
-                            const baseUrl = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL)
-                                ? window.API_BASE_URL
-                                : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
-                            const url = baseUrl + `/${kind}/${plant.id}/images/${img.id}`;
+                            // Use relative URL for delete (works on both Vercel and local)
+                            const url = `/${kind}/${plant.id}/images/${img.id}`;
 
-                            console.log('🗑️  Deleting image at:', url);
-                            const r = await fetch(url, delOpts);
+                            console.log('🗑️  Deleting image at:', url, 'Options:', delOpts);
+                            const r = await fetch(url, delOpts).catch(err => {
+                                console.error('🗑️  Fetch error:', err);
+                                throw err;
+                            });
                             const txt = await r.text();
-                            if (!r.ok) return alert('Delete failed: ' + (txt || r.status));
+                            console.log('🗑️  Delete response:', r.status, txt);
+                            if (!r.ok) {
+                                console.error('🗑️  Delete failed with status', r.status);
+                                if (r.status === 401) return alert('Delete failed: Not authenticated. Please provide an invite token.');
+                                return alert('Delete failed: ' + (txt || r.status));
+                            }
 
                             // remove from UI
                             removeImageUI(img.filename);
@@ -4861,10 +4866,10 @@
                                 // Refresh the proper list based on subject type and refresh modal if subject remains
                                 if (plant._type === 'flower') {
                                     await loadFlowers();
-                                    try { const res2 = await fetch(baseUrl + `/flowers/${plant.id}`); if (res2.ok) { const p2 = await res2.json(); showManageModal(Object.assign({ _type: 'flower' }, p2)); } else closeManageModal(); } catch (e) { closeManageModal(); }
+                                    try { const res2 = await fetch(`/flowers/${plant.id}`); if (res2.ok) { const p2 = await res2.json(); showManageModal(Object.assign({ _type: 'flower' }, p2)); } else closeManageModal(); } catch (e) { closeManageModal(); }
                                 } else {
                                     await loadPlants();
-                                    try { const res2 = await fetch(baseUrl + `/plants/${plant.id}`); if (res2.ok) { const p2 = await res2.json(); showManageModal(Object.assign({ _type: 'plant' }, p2)); } else closeManageModal(); } catch (e) { closeManageModal(); }
+                                    try { const res2 = await fetch(`/plants/${plant.id}`); if (res2.ok) { const p2 = await res2.json(); showManageModal(Object.assign({ _type: 'plant' }, p2)); } else closeManageModal(); } catch (e) { closeManageModal(); }
                                 }
                             } catch (e) { closeManageModal(); }
                         } catch (e) { console.error(e); alert('Delete failed'); }
