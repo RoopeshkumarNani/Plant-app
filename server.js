@@ -1,6 +1,10 @@
 // Load local environment variables from .env during development
 require("dotenv").config();
 
+// Deployment timestamp for Vercel tracking
+const DEPLOYMENT_VERSION = "2025-11-29-fixed-vercel-fs";
+console.log("🚀 Plant App starting - Version:", DEPLOYMENT_VERSION);
+
 const express = require("express");
 const compression = require("compression");
 const multer = require("multer");
