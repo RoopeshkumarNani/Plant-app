@@ -41,23 +41,28 @@ const serviceAccount = {
 // Only initialize if we have the required credentials
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   try {
-    console.log("🔧 Initializing Firebase Admin SDK...");
-    console.log("  - Project ID:", process.env.FIREBASE_PROJECT_ID);
-    console.log("  - Client Email:", process.env.FIREBASE_CLIENT_EMAIL);
-    console.log("  - Private Key ID:", process.env.FIREBASE_PRIVATE_KEY_ID);
-    
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: `https://${
-        process.env.FIREBASE_PROJECT_ID || "my-soulmates"
-      }-default-rtdb.firebaseio.com`,
-    });
-    console.log(
-      "✅ Firebase Admin SDK initialized with URL:",
-      `https://${
-        process.env.FIREBASE_PROJECT_ID || "my-soulmates"
-      }-default-rtdb.firebaseio.com`
-    );
+    // Check if Firebase is already initialized
+    if (!admin.apps.length) {
+      console.log("🔧 Initializing Firebase Admin SDK...");
+      console.log("  - Project ID:", process.env.FIREBASE_PROJECT_ID);
+      console.log("  - Client Email:", process.env.FIREBASE_CLIENT_EMAIL);
+      console.log("  - Private Key ID:", process.env.FIREBASE_PRIVATE_KEY_ID);
+      
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: `https://${
+          process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+        }-default-rtdb.firebaseio.com`,
+      });
+      console.log(
+        "✅ Firebase Admin SDK initialized with URL:",
+        `https://${
+          process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+        }-default-rtdb.firebaseio.com`
+      );
+    } else {
+      console.log("✅ Firebase Admin SDK already initialized");
+    }
   } catch (e) {
     console.error("❌ Firebase initialization failed:", e.message);
     console.error("Stack:", e.stack);
@@ -2672,19 +2677,30 @@ async function initializeDataIfEmpty() {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
-  console.log(`   - Local: http://localhost:${PORT}`);
-  console.log(
-    `   - Production: ${process.env.RENDER_EXTERNAL_URL || "not-on-render"}`
-  );
-  console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
-  console.log(`   - Using Supabase: ${USE_SUPABASE}`);
-  console.log(`   - Build timestamp: ${new Date().toISOString()}`);
 
-  // Initialize data if empty
-  await initializeDataIfEmpty();
-});
+// For Vercel serverless environment
+if (process.env.VERCEL) {
+  console.log("🚀 Running on Vercel (serverless)");
+  console.log(`   - Build timestamp: ${new Date().toISOString()}`);
+} else {
+  // For local development or other environments
+  app.listen(PORT, async () => {
+    console.log(`🚀 Server listening on port ${PORT}`);
+    console.log(`   - Local: http://localhost:${PORT}`);
+    console.log(
+      `   - Production: ${process.env.RENDER_EXTERNAL_URL || "not-on-render"}`
+    );
+    console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
+    console.log(`   - Using Supabase: ${USE_SUPABASE}`);
+    console.log(`   - Build timestamp: ${new Date().toISOString()}`);
+
+    // Initialize data if empty
+    await initializeDataIfEmpty();
+  });
+}
+
+// Export app for Vercel serverless
+module.exports = app;
 
 // Reply endpoint: user sends text and server will save it and optionally call LLM to produce plant reply
 app.post("/reply", requireToken, express.json(), async (req, res) => {
