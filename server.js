@@ -40,26 +40,49 @@ const serviceAccount = {
 
 // Only initialize if we have the required credentials
 if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${
-      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
-    }-default-rtdb.firebaseio.com`,
-  });
-  console.log(
-    "✅ Firebase Admin SDK initialized with URL:",
-    `https://${
-      process.env.FIREBASE_PROJECT_ID || "my-soulmates"
-    }-default-rtdb.firebaseio.com`
-  );
+  try {
+    console.log("🔧 Initializing Firebase Admin SDK...");
+    console.log("  - Project ID:", process.env.FIREBASE_PROJECT_ID);
+    console.log("  - Client Email:", process.env.FIREBASE_CLIENT_EMAIL);
+    console.log("  - Private Key ID:", process.env.FIREBASE_PRIVATE_KEY_ID);
+    
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: `https://${
+        process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+      }-default-rtdb.firebaseio.com`,
+    });
+    console.log(
+      "✅ Firebase Admin SDK initialized with URL:",
+      `https://${
+        process.env.FIREBASE_PROJECT_ID || "my-soulmates"
+      }-default-rtdb.firebaseio.com`
+    );
+  } catch (e) {
+    console.error("❌ Firebase initialization failed:", e.message);
+    console.error("Stack:", e.stack);
+  }
 } else {
   console.warn(
     "⚠️  Firebase credentials not found. Using fallback local storage."
   );
+  if (!process.env.FIREBASE_PRIVATE_KEY)
+    console.warn("  - FIREBASE_PRIVATE_KEY not set");
+  if (!process.env.FIREBASE_CLIENT_EMAIL)
+    console.warn("  - FIREBASE_CLIENT_EMAIL not set");
 }
 
 // Reference to Firebase Realtime Database
-const db = admin.database();
+let db = null;
+if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+  try {
+    db = admin.database();
+    console.log("✅ Firebase Realtime Database reference created");
+  } catch (e) {
+    console.error("⚠️  Firebase Database initialization failed:", e.message);
+    db = null;
+  }
+}
 
 // Reference to Firebase Storage Bucket
 let bucket = null;
@@ -547,8 +570,12 @@ app.get("/image/:imageId", async (req, res) => {
     console.log(`   📋 Image record:`, {
       id: images.id,
       filename: images.filename,
-      firebase_url: images.firebase_url ? images.firebase_url.substring(0, 50) + '...' : null,
-      supabase_url: images.supabase_url ? images.supabase_url.substring(0, 50) + '...' : null,
+      firebase_url: images.firebase_url
+        ? images.firebase_url.substring(0, 50) + "..."
+        : null,
+      supabase_url: images.supabase_url
+        ? images.supabase_url.substring(0, 50) + "..."
+        : null,
       upload_failed: images.upload_failed,
     });
 
@@ -557,7 +584,8 @@ app.get("/image/:imageId", async (req, res) => {
       console.log(`   ❌ Upload failed - no storage available`);
       return res.status(404).json({
         error: "Image upload failed",
-        details: "The image failed to upload to cloud storage. Check server logs and Vercel environment variables.",
+        details:
+          "The image failed to upload to cloud storage. Check server logs and Vercel environment variables.",
       });
     }
 
@@ -580,7 +608,9 @@ app.get("/image/:imageId", async (req, res) => {
       return res.sendFile(localPath);
     }
 
-    console.log(`   ❌ No valid storage found for image (no http URLs, file doesn't exist locally)`);
+    console.log(
+      `   ❌ No valid storage found for image (no http URLs, file doesn't exist locally)`
+    );
     res.status(404).json({ error: "Image file not found in any storage" });
   } catch (error) {
     console.error("❌ Error serving image:", error);
@@ -655,8 +685,13 @@ async function readDB() {
     ]);
 
     // Check if we got any data from Supabase
-    if (!plantsError && !flowersError && !imagesError && !conversationsError && 
-        (plants?.length > 0 || flowers?.length > 0)) {
+    if (
+      !plantsError &&
+      !flowersError &&
+      !imagesError &&
+      !conversationsError &&
+      (plants?.length > 0 || flowers?.length > 0)
+    ) {
       // Reconstruct nested structure from relational data
       const plantsWithData = (plants || []).map((plant) => ({
         ...plant,
@@ -1968,7 +2003,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     }
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
-    console.log("🔍 UPLOAD DEBUG - Received subjectType:", subjectType, "Type:", typeof subjectType);
+    console.log(
+      "🔍 UPLOAD DEBUG - Received subjectType:",
+      subjectType,
+      "Type:",
+      typeof subjectType
+    );
     const db = await readDB();
     if (!db || typeof db !== "object") {
       console.error("❌ readDB returned invalid object:", typeof db, db);
@@ -1991,7 +2031,13 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       subjectType === "flower" || subjectType === "flowers"
         ? "flowers"
         : "plants";
-    console.log("🏷️  Initial determinedType from user input:", determinedType, "(subjectType was:", subjectType, ")");
+    console.log(
+      "🏷️  Initial determinedType from user input:",
+      determinedType,
+      "(subjectType was:",
+      subjectType,
+      ")"
+    );
 
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
@@ -2133,9 +2179,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
             console.error(
               "   On Vercel, images MUST be stored in cloud storage (Firebase or Supabase)"
             );
-            console.error(
-              "   Check your environment variables on Vercel for:"
-            );
+            console.error("   Check your environment variables on Vercel for:");
             console.error("   - FIREBASE_PRIVATE_KEY");
             console.error("   - FIREBASE_CLIENT_EMAIL");
             console.error("   - FIREBASE_PROJECT_ID");
@@ -2596,18 +2640,18 @@ async function initializeDataIfEmpty() {
       console.log("📊 Database is empty, initializing sample data...");
       try {
         // Try to run the initialization script
-        const { spawn } = require('child_process');
+        const { spawn } = require("child_process");
         return new Promise((resolve) => {
-          const child = spawn('node', ['initialize-data.js']);
-          let output = '';
-          child.stdout.on('data', (data) => {
+          const child = spawn("node", ["initialize-data.js"]);
+          let output = "";
+          child.stdout.on("data", (data) => {
             output += data;
             console.log(data.toString().trim());
           });
-          child.stderr.on('data', (data) => {
+          child.stderr.on("data", (data) => {
             console.error("Initialization error:", data.toString().trim());
           });
-          child.on('close', (code) => {
+          child.on("close", (code) => {
             console.log(`✅ Initialization completed with code ${code}`);
             resolve();
           });
@@ -2616,7 +2660,11 @@ async function initializeDataIfEmpty() {
         console.warn("Could not run initialize-data.js:", e.message);
       }
     } else {
-      console.log(`📊 Database loaded: ${db.plants.length} plants, ${db.flowers?.length || 0} flowers`);
+      console.log(
+        `📊 Database loaded: ${db.plants.length} plants, ${
+          db.flowers?.length || 0
+        } flowers`
+      );
     }
   } catch (e) {
     console.error("Error checking database:", e.message);
@@ -2633,7 +2681,7 @@ app.listen(PORT, async () => {
   console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
   console.log(`   - Using Supabase: ${USE_SUPABASE}`);
   console.log(`   - Build timestamp: ${new Date().toISOString()}`);
-  
+
   // Initialize data if empty
   await initializeDataIfEmpty();
 });
