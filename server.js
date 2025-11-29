@@ -2080,6 +2080,12 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
     console.log(
+      "🔍 UPLOAD DEBUG - req.body keys:",
+      Object.keys(req.body),
+      "Full body:",
+      JSON.stringify(req.body)
+    );
+    console.log(
       "🔍 UPLOAD DEBUG - Received subjectType:",
       subjectType,
       "Type:",
@@ -2151,12 +2157,20 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     let plant = null;
     let collection = determinedType;
     console.log(
-      "🔑 Final collection value:",
+      "🔑 Final collection value BEFORE save:",
       collection,
       "type:",
       typeof collection,
       "db keys:",
       Object.keys(db)
+    );
+    console.log(
+      "🔑 DEBUG - subjectType was:",
+      subjectType,
+      "determinedType is:",
+      determinedType,
+      "collection will be:",
+      collection
     );
 
     if (!db[collection]) {
