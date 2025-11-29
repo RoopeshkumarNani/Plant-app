@@ -3304,7 +3304,7 @@ app.post("/reply-fast", requireToken, express.json(), (req, res) => {
 
 // Delete an image for a plant (remove DB entry and file)
 // Tokenless by default for single-recipient installs
-app.delete("/plants/:id/images/:imgId", async (req, res) => {
+app.delete("/plants/:id/images/:imgId", requireToken, async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /plants/:id/images/:imgId", { id, imgId });
@@ -3318,12 +3318,14 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
       .single();
 
     if (selectErr || !imgData) {
-      return res.status(404).json({ error: "Image not found" });
+      console.error("[DELETE] Image not found:", selectErr?.message || "No data");
+      return res.status(404).json({ error: "Image not found", details: selectErr?.message });
     }
 
     console.log("[DELETE] found image", {
       filename: imgData.filename,
       id: imgData.id,
+      plant_id: imgData.plant_id,
     });
 
     // Delete from Supabase Storage if URL exists
@@ -3389,7 +3391,7 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
 });
 
 // Delete an image for a flower (mirror the plants route)
-app.delete("/flowers/:id/images/:imgId", async (req, res) => {
+app.delete("/flowers/:id/images/:imgId", requireToken, async (req, res) => {
   try {
     const { id, imgId } = req.params;
     console.log("[DELETE] /flowers/:id/images/:imgId", { id, imgId });
@@ -3403,12 +3405,14 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
       .single();
 
     if (selectErr || !imgData) {
-      return res.status(404).json({ error: "Image not found" });
+      console.error("[DELETE] Flower image not found:", selectErr?.message || "No data");
+      return res.status(404).json({ error: "Image not found", details: selectErr?.message });
     }
 
     console.log("[DELETE] found flower image", {
       filename: imgData.filename,
       id: imgData.id,
+      flower_id: imgData.flower_id,
     });
 
     // Delete from Supabase Storage if URL exists
