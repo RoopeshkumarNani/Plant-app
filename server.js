@@ -569,6 +569,17 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// Health check endpoint - responds immediately
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    version: DEPLOYMENT_VERSION,
+    firebase: admin.apps.length > 0 ? "initialized" : "not-initialized",
+    vercel: process.env.VERCEL ? "yes" : "no"
+  });
+});
+
 // Optimize image serving: cache and set proper headers
 app.use(
   "/uploads",
@@ -2521,7 +2532,7 @@ app.post("/reply", requireToken, async (req, res) => {
   }
 });
 
-app.get("/plants", requireToken, async (req, res) => {
+app.get("/plants", async (req, res) => {
   try {
     const db = await readDB();
     res.json(db.plants || []);
@@ -3756,15 +3767,6 @@ app.post(
     }
   }
 );
-
-app.get("/plants", async (req, res) => {
-  try {
-    const plants = await getPlants();
-    res.json(Array.isArray(plants) ? plants : Object.values(plants || {}));
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 // Diagnostic endpoint to check Firebase configuration
 app.get("/admin/firebase-status", (req, res) => {
