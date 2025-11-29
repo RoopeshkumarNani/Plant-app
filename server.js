@@ -140,7 +140,7 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
     const { data, error } = await supabase.storage
       .from("images")
       .upload(filename, fileBuffer, {
-        contentType: "image/webp",
+        contentType: "image/jpeg",
         upsert: false,
       });
 
@@ -218,31 +218,28 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
 
     try {
       // For string paths, verify file exists
-      let uploadPath = filePathOrBuffer;
-      let tempFile = null;
+      let uploadBuffer;
 
-      if (typeof filePathOrBuffer !== "string") {
-        // Buffer case: write to temp file first
-        tempFile = path.join(UPLOAD_DIR, `temp-${Date.now()}.jpg`);
-        fs.writeFileSync(tempFile, filePathOrBuffer);
-        uploadPath = tempFile;
-        console.log(`   Buffer written to temp file: ${tempFile}`);
+      if (typeof filePathOrBuffer === "string") {
+        // File path case: read from disk
+        if (!fs.existsSync(filePathOrBuffer)) {
+          throw new Error(`Upload file does not exist: ${filePathOrBuffer}`);
+        }
+        console.log(
+          `   File exists, size: ${fs.statSync(filePathOrBuffer).size} bytes`
+        );
+        console.log(`   Uploading file from: ${filePathOrBuffer}`);
+        uploadBuffer = fs.readFileSync(filePathOrBuffer);
+      } else {
+        // Buffer case: use directly (no temp file on Vercel)
+        uploadBuffer = filePathOrBuffer;
+        console.log(`   Using buffer directly (size: ${uploadBuffer.length} bytes)`);
       }
 
-      // Verify file exists before upload
-      if (!fs.existsSync(uploadPath)) {
-        throw new Error(`Upload file does not exist: ${uploadPath}`);
-      }
-      console.log(
-        `   File exists, size: ${fs.statSync(uploadPath).size} bytes`
-      );
-      console.log(`   Uploading file from: ${uploadPath}`);
-
-      // Try simpler direct upload using the file object
+      // Upload the buffer directly
       const file = bucket.file(destinationPath);
 
-      // Upload using the saveAs method on the file
-      await file.save(fs.readFileSync(uploadPath), {
+      await file.save(uploadBuffer, {
         metadata: {
           cacheControl: "public, max-age=31536000",
           contentType: "image/jpeg",
@@ -251,16 +248,6 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
       });
 
       console.log("✅ File uploaded to Firebase Storage successfully");
-
-      // Clean up temp file if we created one
-      if (tempFile) {
-        try {
-          fs.unlinkSync(tempFile);
-          console.log("   Temp file cleaned up");
-        } catch (e) {
-          console.warn("   Could not delete temp file:", e.message);
-        }
-      }
 
       // Return public URL
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${destinationPath}`;
