@@ -24,13 +24,24 @@ const supabase = createClient(
 console.log("✅ Supabase client initialized");
 
 // Initialize Firebase Admin SDK
+// Helper function to properly parse the private key regardless of format
+function parsePrivateKey(keyStr) {
+  if (!keyStr) return undefined;
+  
+  // If it contains literal \n (two characters), replace with actual newlines
+  if (keyStr.includes("\\n")) {
+    return keyStr.replace(/\\n/g, "\n");
+  }
+  
+  // Otherwise assume it already has real newlines (from environment variable)
+  return keyStr;
+}
+
 const serviceAccount = {
   type: "service_account",
   project_id: process.env.FIREBASE_PROJECT_ID || "my-soulmates",
   private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY
-    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
-    : undefined,
+  private_key: parsePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
   client_email: process.env.FIREBASE_CLIENT_EMAIL,
   client_id: process.env.FIREBASE_CLIENT_ID,
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
