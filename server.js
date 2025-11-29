@@ -59,14 +59,7 @@ if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
 }
 
 // Reference to Firebase Realtime Database
-let db = null;
-if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-  try {
-    db = admin.database();
-  } catch (e) {
-    console.warn("⚠️  Could not initialize Firebase Database:", e.message);
-  }
-}
+const db = admin.database();
 
 // Reference to Firebase Storage Bucket
 let bucket = null;
@@ -385,11 +378,9 @@ async function syncDBToFirebase(dbData) {
 }
 
 // Define directories BEFORE error handlers that use them
-// Define directories BEFORE error handlers that use them
-const isVercel = process.env.VERCEL === '1';
-const UPLOAD_DIR = isVercel ? path.join('/tmp', 'uploads') : path.join(__dirname, "uploads");
+const UPLOAD_DIR = path.join(__dirname, "uploads");
 // Always use relative path from __dirname for consistency across environments
-const DATA_DIR = isVercel ? path.join('/tmp', 'data') : path.join(__dirname, "data");
+const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
 // Image format conversion utility - converts any format to PNG for processing
@@ -492,7 +483,7 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, x-invite-token, Expires, Pragma, Cache-Control"
+    "Content-Type, Authorization, x-invite-token"
   );
   res.header("Access-Control-Allow-Credentials", "true");
 
@@ -549,28 +540,47 @@ app.get("/image/:imageId", async (req, res) => {
       .single();
 
     if (error || !images) {
+      console.log(`   ❌ Image not found in database`);
       return res.status(404).json({ error: "Image not found" });
     }
 
-    // If image has firebase_url, redirect to it
-    if (images.firebase_url) {
-      console.log(`   Redirecting to Firebase URL`);
+    console.log(`   📋 Image record:`, {
+      id: images.id,
+      filename: images.filename,
+      firebase_url: images.firebase_url ? images.firebase_url.substring(0, 50) + '...' : null,
+      supabase_url: images.supabase_url ? images.supabase_url.substring(0, 50) + '...' : null,
+      upload_failed: images.upload_failed,
+    });
+
+    // Check if upload actually failed
+    if (images.upload_failed) {
+      console.log(`   ❌ Upload failed - no storage available`);
+      return res.status(404).json({
+        error: "Image upload failed",
+        details: "The image failed to upload to cloud storage. Check server logs and Vercel environment variables.",
+      });
+    }
+
+    // If image has a valid firebase_url (MUST be a real storage URL, not /image/), redirect to it
+    if (images.firebase_url && images.firebase_url.startsWith("http")) {
+      console.log(`   ✅ Redirecting to Firebase URL`);
       return res.redirect(images.firebase_url);
     }
 
-    // If image has supabase_url, redirect to it
-    if (images.supabase_url) {
-      console.log(`   Redirecting to Supabase URL`);
+    // If image has a valid supabase_url, redirect to it
+    if (images.supabase_url && images.supabase_url.startsWith("http")) {
+      console.log(`   ✅ Redirecting to Supabase URL`);
       return res.redirect(images.supabase_url);
     }
 
-    // Check if file exists locally
+    // Check if file exists locally (for dev/Replit - should not happen on Vercel)
     const localPath = path.join(UPLOAD_DIR, images.filename);
     if (fs.existsSync(localPath)) {
-      console.log(`   Serving from local: ${localPath}`);
+      console.log(`   ✅ Serving from local: ${localPath}`);
       return res.sendFile(localPath);
     }
 
+    console.log(`   ❌ No valid storage found for image (no http URLs, file doesn't exist locally)`);
     res.status(404).json({ error: "Image file not found in any storage" });
   } catch (error) {
     console.error("❌ Error serving image:", error);
@@ -618,22 +628,11 @@ function writeReplyDebug(line) {
   }
 }
 
-// Vercel/Serverless compatible storage (Memory)
-const storage = multer.memoryStorage();
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
 const upload = multer({ storage });
-
-// Helper to write buffer to temp file for libraries that need it
-async function withTempFile(buffer, callback) {
-  const tempPath = path.join('/tmp', `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`);
-  try {
-    fs.writeFileSync(tempPath, buffer);
-    return await callback(tempPath);
-  } finally {
-    if (fs.existsSync(tempPath)) {
-      try { fs.unlinkSync(tempPath); } catch (e) { }
-    }
-  }
-}
 
 // Database functions - ALWAYS use Supabase relational schema (fully migrated)
 const USE_SUPABASE = true;
@@ -1347,7 +1346,8 @@ async function callPlantNet(imagePath) {
     // Try Pl@ntNet API with your API key
     try {
       console.log("📤 Calling Pl@ntNet API for plant identification...");
-      
+      const buf = fs.readFileSync(processPath);
+
       // Create proper FormData for multipart/form-data
       const form = new FormData();
       form.append("images", fs.createReadStream(processPath));
@@ -1947,19 +1947,24 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         success: false,
         error: 'No file uploaded (field name must be "photo")',
       });
-    console.log("✅ File received:", file.originalname, `(${file.size} bytes)`);
+    console.log("✅ File received:", file.filename, `(${file.size} bytes)`);
 
-    let fileBuffer = file.buffer;
-    
+    let fileBuffer = null;
     try {
-      console.log("✅ File in memory buffer, size:", fileBuffer.length);
+      fileBuffer = fs.readFileSync(file.path);
+      console.log("✅ File read into memory buffer, size:", fileBuffer.length);
       fileBuffer = await sharp(fileBuffer)
         .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality: 85, progressive: true })
         .toBuffer();
       console.log("✅ Image compressed, new size:", fileBuffer.length, "bytes");
+      // ✅ NO LONGER SAVE TO LOCAL FILESYSTEM (ephemeral on Replit)
+      // Files will only be stored in Supabase Storage
+      console.log(
+        "ℹ️  Skipping local file save - will use Supabase Storage only"
+      );
     } catch (e) {
-      console.warn("⚠️  Could not compress file:", e.message);
+      console.warn("⚠️  Could not read or compress file:", e.message);
     }
 
     const { species, nickname, owner, subjectType, subjectId } = req.body;
@@ -1991,10 +1996,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     // ✅ IDENTIFY SPECIES SYNCHRONOUSLY during upload
     console.log("🔍 Identifying species from image...");
     try {
-      let identification = null;
-      await withTempFile(fileBuffer, async (tempPath) => {
-          identification = await callPlantNet(tempPath);
-      });
+      const identification = await callPlantNet(file.path);
       if (identification && identification.species) {
         identifiedSpecies = identification.species;
         console.log(`✅ Identified species: ${identifiedSpecies}`);
@@ -2070,7 +2072,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     const imgEntry = {
       id: uuidv4(),
-      filename: `${Date.now()}-${file.originalname}`,
+      filename: path.basename(file.path),
       uploadedAt: new Date().toISOString(),
       area: null,
       firebase_url: null, // ❌ Will no longer use local files
@@ -2123,15 +2125,30 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
             imgEntry.supabase_url = storageUrl;
             console.log("✅ Image uploaded to Supabase Storage:", storageUrl);
           } else {
-            // Fallback: save filename, will serve via /image/:imageId endpoint
-            console.warn(
-              "⚠️  Cloud storage failed, will serve via image endpoint"
+            // ❌ CRITICAL: Both cloud storage uploads failed - we CANNOT serve this image
+            // Do NOT use /image endpoint as fallback (causes infinite redirects on Vercel)
+            console.error(
+              "❌ CRITICAL: Both Firebase AND Supabase uploads failed!"
             );
-            // Save the WebP to local storage as fallback
-            const tempPath = path.join(UPLOAD_DIR, webpFilename);
-            fs.writeFileSync(tempPath, webpBuffer);
-            imgEntry.firebase_url = `/image/${imgEntry.id}`;
-            console.log("   Will serve via:", imgEntry.firebase_url);
+            console.error(
+              "   On Vercel, images MUST be stored in cloud storage (Firebase or Supabase)"
+            );
+            console.error(
+              "   Check your environment variables on Vercel for:"
+            );
+            console.error("   - FIREBASE_PRIVATE_KEY");
+            console.error("   - FIREBASE_CLIENT_EMAIL");
+            console.error("   - FIREBASE_PROJECT_ID");
+            console.error("   - SUPABASE_URL");
+            console.error("   - SUPABASE_ANON_KEY");
+
+            // Set a placeholder URL that indicates the upload failed
+            imgEntry.firebase_url = null;
+            imgEntry.supabase_url = null;
+            imgEntry.upload_failed = true;
+            console.warn(
+              "⚠️  Image record created but will show as broken (no storage URL)"
+            );
           }
         }
       } catch (e) {
@@ -2176,8 +2193,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
 
     // Run enrichment in the background (analyzes green area, generates better response, etc)
     console.log("🔄 Starting background enrichment...");
-    // Pass buffer instead of path for enrichment
-    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, fileBuffer);
+    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, file.path);
   } catch (e) {
     console.error(
       "❌ /upload endpoint error:",
@@ -2212,7 +2228,7 @@ async function enrichImageAndRespond(
   imgEntry,
   msgEntry,
   subjectCollection,
-  imageBuffer
+  localFilePath
 ) {
   try {
     console.log(
@@ -2225,8 +2241,10 @@ async function enrichImageAndRespond(
       return;
     }
 
-    // Use temp file for operations that need it
-    await withTempFile(imageBuffer, async (localFilePath) => {
+    if (!fs.existsSync(localFilePath)) {
+      console.error(`[ENRICH] Local file ${localFilePath} does not exist`);
+      return;
+    }
 
     // 1. Analyze green area
     const area = await analyzeGreenArea(localFilePath);
@@ -2322,9 +2340,23 @@ async function enrichImageAndRespond(
       conversation: msgEntry,
     });
     console.log(`[ENRICH] SSE notification sent for ${subject.id}`);
-    });
   } catch (e) {
     console.error(`[ENRICH] Background enrichment failed: ${e.message}`);
+  } finally {
+    // 8. Clean up the local file
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(localFilePath)) {
+          fs.unlinkSync(localFilePath);
+          console.log(
+            "[ENRICH] Cleaned up local upload:",
+            path.basename(localFilePath)
+          );
+        }
+      } catch (e) {
+        console.warn("[ENRICH] Could not delete temp file:", e.message);
+      }
+    }, 30 * 1000); // 30-second delay
   }
 }
 
@@ -3807,145 +3839,6 @@ app.get("/analytics/plants", (req, res) => {
 
     res.json({ success: true, analytics });
   } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Admin endpoint: fix missing image URLs by checking Supabase Storage
-app.post("/admin/fix-image-urls", requireToken, async (req, res) => {
-  try {
-    console.log("🔧 Starting image URL fix...");
-    const db = await readDB();
-    const plants = db.plants || [];
-    const flowers = db.flowers || [];
-    let fixed = 0;
-
-    const allImages = [
-      ...plants.flatMap(p => (p.images || []).map(i => ({ ...i, parentId: p.id, type: 'plant' }))),
-      ...flowers.flatMap(f => (f.images || []).map(i => ({ ...i, parentId: f.id, type: 'flower' })))
-    ];
-
-    for (const img of allImages) {
-      // Fix if URL is missing OR if it points to the old Replit backend
-      const hasBadUrl = img.firebase_url && img.firebase_url.includes("replit.dev");
-      
-      if ((!img.supabase_url && (!img.firebase_url || hasBadUrl)) && img.filename) {
-        console.log(`Checking image: ${img.filename} (Bad URL: ${hasBadUrl})`);
-        
-        // Generate Supabase Storage URL
-        const { data } = supabase.storage.from("images").getPublicUrl(img.filename);
-        if (data && data.publicUrl) {
-           // Update the original object in the DB structure
-           let parent = (img.type === 'plant' ? plants : flowers).find(p => p.id === img.parentId);
-           if (parent) {
-             const originalImg = parent.images.find(i => i.id === img.id);
-             if (originalImg) {
-               originalImg.supabase_url = data.publicUrl;
-               fixed++;
-               console.log(`✅ Fixed URL for ${img.filename}`);
-             }
-           }
-        }
-      }
-    }
-
-    if (fixed > 0) {
-      await writeDB(db);
-      console.log(`💾 Saved DB with ${fixed} fixed images`);
-    }
-
-    res.json({ success: true, fixed, message: `Fixed ${fixed} images` });
-  } catch (e) {
-    console.error("Fix failed:", e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Admin endpoint: Migrate images from Replit to Supabase
-app.post("/admin/migrate-from-replit", requireToken, async (req, res) => {
-  try {
-    console.log("🚀 Starting Replit -> Supabase migration...");
-    const db = await readDB();
-    const plants = db.plants || [];
-    const flowers = db.flowers || [];
-    let migrated = 0;
-    let errors = 0;
-
-    const allImages = [
-      ...plants.flatMap(p => (p.images || []).map(i => ({ ...i, parentId: p.id, type: 'plant' }))),
-      ...flowers.flatMap(f => (f.images || []).map(i => ({ ...i, parentId: f.id, type: 'flower' })))
-    ];
-
-    for (const img of allImages) {
-      // Check if it's a Replit URL
-      if (img.firebase_url && img.firebase_url.includes("replit.dev")) {
-        console.log(`Processing ${img.filename}...`);
-        
-        // 1. Fetch from Replit
-        try {
-          const replitResp = await fetch(img.firebase_url);
-          if (!replitResp.ok) {
-            console.warn(`❌ Failed to fetch from Replit (${replitResp.status}): ${img.firebase_url}`);
-            errors++;
-            continue;
-          }
-          
-          const buffer = await replitResp.buffer();
-          const contentType = replitResp.headers.get("content-type") || "image/jpeg";
-
-          // 2. Upload to Supabase
-          const { data, error } = await supabase.storage
-            .from("images")
-            .upload(img.filename, buffer, {
-              contentType: contentType,
-              upsert: true,
-            });
-
-          if (error) {
-             console.error(`❌ Supabase upload failed: ${error.message}`);
-             errors++;
-             continue;
-          }
-
-          // 3. Get Public URL
-          const { data: publicData } = supabase.storage.from("images").getPublicUrl(img.filename);
-          
-          if (publicData && publicData.publicUrl) {
-             // 4. Update DB
-             let parent = (img.type === 'plant' ? plants : flowers).find(p => p.id === img.parentId);
-             if (parent) {
-               const originalImg = parent.images.find(i => i.id === img.id);
-               if (originalImg) {
-                 originalImg.supabase_url = publicData.publicUrl;
-                 // Optional: Clear the old broken URL so we stop trying to use it
-                 // originalImg.firebase_url = null; 
-                 migrated++;
-                 console.log(`✅ Migrated ${img.filename} to Supabase!`);
-               }
-             }
-          }
-
-        } catch (err) {
-          console.error(`❌ Error processing ${img.filename}:`, err.message);
-          errors++;
-        }
-      }
-    }
-
-    if (migrated > 0) {
-      await writeDB(db);
-      console.log(`💾 Saved DB with ${migrated} migrated images`);
-    }
-
-    res.json({ 
-      success: true, 
-      migrated, 
-      errors, 
-      message: `Migrated ${migrated} images. Errors: ${errors}.` 
-    });
-
-  } catch (e) {
-    console.error("Migration failed:", e);
     res.status(500).json({ error: e.message });
   }
 });
