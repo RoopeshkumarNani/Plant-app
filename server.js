@@ -2905,6 +2905,47 @@ async function initializeDataIfEmpty() {
 
 const PORT = process.env.PORT || 3000;
 
+// Cleanup broken images (without storage URLs) on startup
+async function cleanupBrokenImages() {
+  try {
+    console.log("🧹 [STARTUP] Cleaning up broken images without storage URLs...");
+    
+    const { data: images, error: selectErr } = await supabase
+      .from("images")
+      .select("*");
+
+    if (selectErr) {
+      console.warn("⚠️  Could not fetch images for cleanup:", selectErr.message);
+      return;
+    }
+
+    const brokenImages = images.filter(
+      (img) => !img.firebase_url && !img.supabase_url
+    );
+
+    if (brokenImages.length === 0) {
+      console.log("✅ [STARTUP] No broken images to clean up");
+      return;
+    }
+
+    console.log(`🧹 [STARTUP] Found ${brokenImages.length} broken images, deleting...`);
+
+    for (const img of brokenImages) {
+      await supabase
+        .from("images")
+        .delete()
+        .eq("id", img.id);
+    }
+
+    console.log(`✅ [STARTUP] Deleted ${brokenImages.length} broken images`);
+  } catch (error) {
+    console.warn("⚠️  Cleanup on startup failed:", error.message);
+  }
+}
+
+// Run cleanup on startup
+cleanupBrokenImages();
+
 // For Vercel serverless environment
 if (process.env.VERCEL) {
   console.log("🚀 Running on Vercel (serverless)");
