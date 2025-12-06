@@ -2896,6 +2896,10 @@
                     if (imageUrl) {
                         img.dataset.src = imageUrl;
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/></svg>';
+                        img.onerror = () => {
+                            console.warn('❌ Image failed to load:', imageUrl);
+                            img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial" font-size="12" fill="%23999">Image not available</text></svg>';
+                        };
                     } else {
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23eef9ef"/></svg>';
                     }
@@ -3011,6 +3015,10 @@
                     if (imageUrl) {
                         img.dataset.src = imageUrl;
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/></svg>';
+                        img.onerror = () => {
+                            console.warn('❌ Image failed to load:', imageUrl);
+                            img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial" font-size="12" fill="%23999">Image not available</text></svg>';
+                        };
                     } else {
                         img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="100%" height="100%" fill="%23fff0f6"/></svg>';
                     }
@@ -3094,11 +3102,8 @@
 
             // If it's an object with an ID, use the /image/:id endpoint (always works)
             if (typeof imageOrFilename === 'object' && imageOrFilename.id) {
-                let baseUrl = (typeof window !== 'undefined' && window.API_BASE_URL)
-                    ? window.API_BASE_URL
-                    : 'https://b7add859-3cd7-4eed-a26d-922cd86fa3cd-00-ug3vo9n1i1we.pike.replit.dev';
-
-                const url = baseUrl + '/image/' + imageOrFilename.id;
+                // Use relative URL for /image endpoint (works on Vercel, localhost, etc)
+                const url = '/image/' + imageOrFilename.id;
                 console.log('✅ Using /image endpoint:', url);
                 return url;
             }

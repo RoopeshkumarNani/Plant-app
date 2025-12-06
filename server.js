@@ -140,7 +140,7 @@ async function uploadFileToSupabaseStorage(fileBuffer, filename) {
     const { data, error } = await supabase.storage
       .from("images")
       .upload(filename, fileBuffer, {
-        contentType: "image/jpeg",
+        contentType: "image/webp",
         upsert: false,
       });
 
@@ -233,7 +233,9 @@ async function uploadFileToFirebaseStorage(filePathOrBuffer, destinationPath) {
       } else {
         // Buffer case: use directly (no temp file on Vercel)
         uploadBuffer = filePathOrBuffer;
-        console.log(`   Using buffer directly (size: ${uploadBuffer.length} bytes)`);
+        console.log(
+          `   Using buffer directly (size: ${uploadBuffer.length} bytes)`
+        );
       }
 
       // Upload the buffer directly
@@ -490,7 +492,8 @@ process.on("unhandledRejection", (reason, p) => {
 // Skip on Vercel since it has ephemeral filesystem
 if (!process.env.VERCEL) {
   try {
-    if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    if (!fs.existsSync(UPLOAD_DIR))
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   } catch (e) {
     console.warn("⚠️  Cannot create UPLOAD_DIR:", e.message);
   }
@@ -563,8 +566,69 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     version: DEPLOYMENT_VERSION,
     firebase: admin.apps.length > 0 ? "initialized" : "not-initialized",
-    vercel: process.env.VERCEL ? "yes" : "no"
+    vercel: process.env.VERCEL ? "yes" : "no",
   });
+});
+
+// Cleanup endpoint - remove images without valid storage URLs
+app.post("/admin/cleanup-broken-images", async (req, res) => {
+  try {
+    console.log("🧹 Starting cleanup of broken images...");
+
+    // Get all images from Supabase
+    const { data: allImages, error: getError } = await supabase
+      .from("images")
+      .select("*");
+
+    if (getError) {
+      return res.status(500).json({ error: getError.message });
+    }
+
+    // Find images without valid storage URLs
+    const brokenImages = (allImages || []).filter((img) => {
+      const hasValidUrl =
+        (img.firebase_url && img.firebase_url.startsWith("http")) ||
+        (img.supabase_url && img.supabase_url.startsWith("http"));
+      return !hasValidUrl;
+    });
+
+    console.log(
+      `📋 Found ${brokenImages.length} broken images out of ${allImages.length} total`
+    );
+
+    // Delete broken images
+    if (brokenImages.length > 0) {
+      const brokenIds = brokenImages.map((img) => img.id);
+      const { error: deleteError } = await supabase
+        .from("images")
+        .delete()
+        .in("id", brokenIds);
+
+      if (deleteError) {
+        console.error(
+          "❌ Failed to delete broken images:",
+          deleteError.message
+        );
+        return res.status(500).json({ error: deleteError.message });
+      }
+
+      console.log(`✅ Deleted ${brokenImages.length} broken images`);
+    }
+
+    res.json({
+      success: true,
+      message: `Cleaned up ${brokenImages.length} broken images`,
+      details: brokenImages.map((img) => ({
+        id: img.id,
+        filename: img.filename,
+        plant_id: img.plant_id,
+        flower_id: img.flower_id,
+      })),
+    });
+  } catch (error) {
+    console.error("❌ Cleanup failed:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Optimize image serving: cache and set proper headers
@@ -601,19 +665,15 @@ app.get("/image/:imageId", async (req, res) => {
       .single();
 
     if (error || !images) {
-      console.log(`   ❌ Image not found in database`);
+      console.log(`   ❌ Image not found in database:`, error?.message);
       return res.status(404).json({ error: "Image not found" });
     }
 
     console.log(`   📋 Image record:`, {
       id: images.id,
       filename: images.filename,
-      firebase_url: images.firebase_url
-        ? images.firebase_url.substring(0, 50) + "..."
-        : null,
-      supabase_url: images.supabase_url
-        ? images.supabase_url.substring(0, 50) + "..."
-        : null,
+      firebase_url: images.firebase_url ? "SET" : "NULL",
+      supabase_url: images.supabase_url ? "SET" : "NULL",
       upload_failed: images.upload_failed,
     });
 
@@ -647,7 +707,11 @@ app.get("/image/:imageId", async (req, res) => {
     }
 
     console.log(
-      `   ❌ No valid storage found for image (no http URLs, file doesn't exist locally)`
+      `   ❌ No valid storage found for image (firebase_url: ${
+        images.firebase_url
+      }, supabase_url: ${images.supabase_url}, local exists: ${fs.existsSync(
+        localPath
+      )})`
     );
     res.status(404).json({ error: "Image file not found in any storage" });
   } catch (error) {
@@ -701,7 +765,8 @@ const storage = process.env.VERCEL
   ? multer.memoryStorage()
   : multer.diskStorage({
       destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+      filename: (req, file, cb) =>
+        cb(null, `${Date.now()}-${file.originalname}`),
     });
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
@@ -1413,9 +1478,11 @@ async function callPlantNet(imagePathOrBuffer) {
 
     // If it's a buffer, we can't use file operations; skip direct processing
     if (Buffer.isBuffer(imagePathOrBuffer)) {
-      console.log("📝 Using buffer data for plant identification (no local file)");
+      console.log(
+        "📝 Using buffer data for plant identification (no local file)"
+      );
       fileBuffer = imagePathOrBuffer;
-    } else if (typeof imagePathOrBuffer === 'string') {
+    } else if (typeof imagePathOrBuffer === "string") {
       imagePath = imagePathOrBuffer;
       console.log("📝 Using file path for plant identification");
     } else {
@@ -1425,7 +1492,7 @@ async function callPlantNet(imagePathOrBuffer) {
 
     // Try to convert unsupported formats to PNG (only if we have a file path)
     let processPath = imagePath;
-    if (typeof imagePath === 'string') {
+    if (typeof imagePath === "string") {
       const ext = path.extname(imagePath).toLowerCase();
       if (![".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"].includes(ext)) {
         const convertedPath = await ensureJimpCompatibleImage(imagePath);
@@ -1438,21 +1505,24 @@ async function callPlantNet(imagePathOrBuffer) {
     // Try Pl@ntNet API with your API key
     try {
       console.log("📤 Calling Pl@ntNet API for plant identification...");
-      
+
       const form = new FormData();
-      
+
       // Append file data - either from buffer or from disk
       if (fileBuffer) {
         console.log("Using buffer for API call, size:", fileBuffer.length);
         form.append("images", fileBuffer, "image.jpg");
-      } else if (typeof processPath === 'string' && fs.existsSync(processPath)) {
+      } else if (
+        typeof processPath === "string" &&
+        fs.existsSync(processPath)
+      ) {
         console.log("Using file path for API call:", processPath);
         form.append("images", fs.createReadStream(processPath));
       } else {
         console.warn("⚠️  No valid image data for PlantNet API");
         return null;
       }
-      
+
       form.append("organs", "auto");
 
       // Using Pl@ntNet API with your API key from .env
@@ -2049,7 +2119,11 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
         success: false,
         error: 'No file uploaded (field name must be "photo")',
       });
-    console.log("✅ File received:", file.filename || file.originalname, `(${file.size} bytes)`);
+    console.log(
+      "✅ File received:",
+      file.filename || file.originalname,
+      `(${file.size} bytes)`
+    );
 
     let fileBuffer = null;
     try {
@@ -2063,7 +2137,7 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
       } else {
         throw new Error("No file buffer or path available");
       }
-      
+
       fileBuffer = await sharp(fileBuffer)
         .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality: 85, progressive: true })
@@ -2331,7 +2405,13 @@ app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
     console.log("🔄 Starting background enrichment...");
     // Pass buffer or file path depending on storage method
     const enrichmentInput = fileBuffer || file.path;
-    enrichImageAndRespond(plant, imgEntry, msgEntry, collection, enrichmentInput);
+    enrichImageAndRespond(
+      plant,
+      imgEntry,
+      msgEntry,
+      collection,
+      enrichmentInput
+    );
   } catch (e) {
     console.error(
       "❌ /upload endpoint error:",
@@ -3318,8 +3398,13 @@ app.delete("/plants/:id/images/:imgId", async (req, res) => {
       .single();
 
     if (selectErr || !imgData) {
-      console.error("[DELETE] Image not found:", selectErr?.message || "No data");
-      return res.status(404).json({ error: "Image not found", details: selectErr?.message });
+      console.error(
+        "[DELETE] Image not found:",
+        selectErr?.message || "No data"
+      );
+      return res
+        .status(404)
+        .json({ error: "Image not found", details: selectErr?.message });
     }
 
     console.log("[DELETE] found image", {
@@ -3405,8 +3490,13 @@ app.delete("/flowers/:id/images/:imgId", async (req, res) => {
       .single();
 
     if (selectErr || !imgData) {
-      console.error("[DELETE] Flower image not found:", selectErr?.message || "No data");
-      return res.status(404).json({ error: "Image not found", details: selectErr?.message });
+      console.error(
+        "[DELETE] Flower image not found:",
+        selectErr?.message || "No data"
+      );
+      return res
+        .status(404)
+        .json({ error: "Image not found", details: selectErr?.message });
     }
 
     console.log("[DELETE] found flower image", {
