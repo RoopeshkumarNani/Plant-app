@@ -1,5 +1,5 @@
 # Simple Node.js Alpine image with security best practices
-FROM node:22-alpine
+FROM node:22.12-alpine3.20
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY package*.json ./
 # Install dependencies with security updates
 RUN npm install --production && \
     npm cache clean --force && \
-    npm audit fix || true
+    npm audit fix --force || true
 
 # Copy app files
 COPY server.js ./
