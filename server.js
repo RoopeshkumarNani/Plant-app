@@ -446,15 +446,19 @@ const app = express();
 // Enable gzip compression for all responses
 app.use(compression());
 
-// Enable CORS for all routes - allow custom headers
+// Enable CORS for all routes - allow custom headers for both preflight and actual requests
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+  const origin = req.get("Origin") || "*";
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-invite-token");
+  res.header("Access-Control-Expose-Headers", "Content-Length, X-JSON-Response");
   res.header("Access-Control-Max-Age", "86400"); // 24 hours
   
   // Handle preflight requests
   if (req.method === "OPTIONS") {
+    console.log("✅ CORS preflight request accepted");
     return res.sendStatus(200);
   }
   next();
@@ -2182,7 +2186,7 @@ function fallbackPlantMessage(species, nickname, growthDelta, lastImage) {
   return `${opener} ${body} ${question}`;
 }
 
-app.post("/upload", requireToken, upload.single("photo"), async (req, res) => {
+app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
     console.log("🚀 Upload endpoint called");
     const file = req.file;
