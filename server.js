@@ -570,6 +570,64 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Cleanup endpoint: remove images without valid storage URLs
+app.delete("/admin/cleanup-broken-images", async (req, res) => {
+  try {
+    console.log("🧹 Cleaning up broken images (no storage URLs)...");
+    
+    // Get all images from Supabase
+    const { data: images, error: selectErr } = await supabase
+      .from("images")
+      .select("*");
+
+    if (selectErr) {
+      console.error("❌ Error fetching images:", selectErr.message);
+      return res.status(500).json({ error: selectErr.message });
+    }
+
+    // Find images without valid storage URLs
+    const brokenImages = images.filter(
+      (img) => !img.firebase_url && !img.supabase_url
+    );
+
+    console.log(`📊 Found ${images.length} total images, ${brokenImages.length} broken`);
+
+    if (brokenImages.length === 0) {
+      return res.json({
+        message: "No broken images found",
+        total: images.length,
+        broken: 0,
+      });
+    }
+
+    // Delete all broken images
+    let deletedCount = 0;
+    for (const img of brokenImages) {
+      const { error: deleteErr } = await supabase
+        .from("images")
+        .delete()
+        .eq("id", img.id);
+
+      if (!deleteErr) {
+        deletedCount++;
+        console.log(`✅ Deleted broken image: ${img.id}`);
+      } else {
+        console.warn(`⚠️  Failed to delete image ${img.id}:`, deleteErr.message);
+      }
+    }
+
+    return res.json({
+      message: "Cleanup complete",
+      total: images.length,
+      broken: brokenImages.length,
+      deleted: deletedCount,
+    });
+  } catch (error) {
+    console.error("❌ Cleanup failed:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Cleanup endpoint - remove images without valid storage URLs
 app.post("/admin/cleanup-broken-images", async (req, res) => {
   try {
